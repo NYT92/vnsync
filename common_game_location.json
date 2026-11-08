@@ -1,0 +1,35 @@
+{
+  "file_extensions": [
+    ".sav",
+    ".dat",
+    ".json",
+    ".txt",
+    ".save",
+    ".ini",
+    "persistent",
+    ".xml",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".properties",
+    ".config",
+    ".conf",
+    ".cfg",
+    ".rpgsave",
+    ".bak"
+  ],
+  "locations": [
+    "Games",
+    "Desktop",
+    "Documents",
+    "Downloads",
+    "steamapps",
+    "Epic Games",
+    "itch",
+    "GOG.com",
+    "GOG Games",
+    ".minecraft",
+    ""
+  ],
+  "": []
+}

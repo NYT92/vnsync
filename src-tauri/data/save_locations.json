@@ -1,0 +1,313 @@
+{
+  "version": 1,
+  "description": "VNSync Default Visual Novel & RPG Save Game Location Database",
+  "entries": [
+    {
+      "id": "nitro-chiral-slow-damage",
+      "title": "Slow Damage",
+      "developer": "Nitro+CHiRAL",
+      "engine": "Nitroplus / NPK",
+      "vndbId": "v19035",
+      "exeNames": ["SlowDamage.exe", "slowdamage.exe"],
+      "savePaths": [
+        "<win_appdata>/Nitro+CHiRAL/Slow Damage",
+        "<win_appdata>/Nitroplus/Slow Damage",
+        "<game_dir>/savedata"
+      ],
+      "notes": "English (JAST USA) and Japanese releases store saves under %APPDATA%\\Nitro+CHiRAL\\Slow Damage."
+    },
+    {
+      "id": "nitro-chiral-dmmd",
+      "title": "DRAMAtical Murder",
+      "developer": "Nitro+CHiRAL",
+      "engine": "Nitroplus / NPA",
+      "vndbId": "v5916",
+      "exeNames": ["DRAMAtical Murder.exe", "dmmd.exe"],
+      "savePaths": [
+        "<win_appdata>/Nitro+CHiRAL/DRAMAtical Murder",
+        "<win_appdata>/Nitroplus/DRAMAtical Murder",
+        "<game_dir>/savedata"
+      ],
+      "notes": "Steam / JAST USA / Japanese editions use %APPDATA%\\Nitro+CHiRAL\\DRAMAtical Murder or <game_dir>/savedata."
+    },
+    {
+      "id": "nitro-chiral-dmmd-reconnect",
+      "title": "DRAMAtical Murder re:connect",
+      "developer": "Nitro+CHiRAL",
+      "engine": "Nitroplus / NPA",
+      "vndbId": "v10759",
+      "exeNames": ["DRAMAtical Murder reconnect.exe", "dmmd_rc.exe"],
+      "savePaths": [
+        "<win_appdata>/Nitro+CHiRAL/DRAMAtical Murder re:connect",
+        "<win_appdata>/Nitro+CHiRAL/DRAMAtical Murder reconnect",
+        "<game_dir>/savedata"
+      ],
+      "notes": "Saves in %APPDATA%\\Nitro+CHiRAL or <game_dir>/savedata."
+    },
+    {
+      "id": "nitro-chiral-sweet-pool",
+      "title": "sweet pool",
+      "developer": "Nitro+CHiRAL",
+      "engine": "Nitroplus / NPA",
+      "vndbId": "v1399",
+      "exeNames": ["sweet pool.exe", "sweetpool.exe"],
+      "savePaths": [
+        "<win_appdata>/Nitro+CHiRAL/sweet pool",
+        "<win_appdata>/Nitroplus/sweet pool",
+        "<game_dir>/savedata"
+      ],
+      "notes": "JAST USA / Steam release stores saves in %APPDATA%\\Nitro+CHiRAL\\sweet pool."
+    },
+    {
+      "id": "nitro-chiral-togainu",
+      "title": "Togainu no Chi ~Lost Blood~",
+      "developer": "Nitro+CHiRAL",
+      "engine": "Nitroplus / NPA",
+      "vndbId": "v434",
+      "exeNames": ["Togainu no Chi.exe", "togainu.exe"],
+      "savePaths": [
+        "<win_appdata>/Nitro+CHiRAL/Togainu no Chi",
+        "<win_appdata>/Nitro+CHiRAL/Togainu no Chi ~Lost Blood~",
+        "<win_appdata>/Nitroplus/Togainu no Chi",
+        "<game_dir>/savedata"
+      ],
+      "notes": "JAST / Steam edition uses %APPDATA%\\Nitro+CHiRAL\\Togainu no Chi; classic edition uses <game_dir>/savedata."
+    },
+    {
+      "id": "nitro-chiral-lamento",
+      "title": "Lamento -BEYOND THE VOID-",
+      "developer": "Nitro+CHiRAL",
+      "engine": "Nitroplus / NPA",
+      "vndbId": "v435",
+      "exeNames": ["Lamento.exe", "lamento.exe"],
+      "savePaths": [
+        "<win_appdata>/Nitro+CHiRAL/Lamento -BEYOND THE VOID-",
+        "<win_appdata>/Nitro+CHiRAL/Lamento",
+        "<game_dir>/savedata"
+      ],
+      "notes": "Saves in <game_dir>/savedata or %APPDATA%\\Nitro+CHiRAL\\Lamento."
+    },
+    {
+      "id": "nitroplus-saya-no-uta",
+      "title": "The Song of Saya (Saya no Uta)",
+      "developer": "Nitroplus",
+      "engine": "Nitroplus / NPK",
+      "vndbId": "v97",
+      "exeNames": ["saya.exe", "Saya no Uta.exe"],
+      "savePaths": [
+        "<win_appdata>/Nitroplus/The Song of Saya",
+        "<win_appdata>/Nitroplus/Saya no Uta",
+        "<win_appdata>/NITRO ORIGIN/The Song of Saya",
+        "<game_dir>/savedata"
+      ],
+      "notes": "Remastered Steam/JAST edition saves in %APPDATA%\\Nitroplus; classic edition saves in <game_dir>/savedata."
+    },
+    {
+      "id": "nitroplus-muramasa",
+      "title": "Full Metal Daemon Muramasa",
+      "developer": "Nitroplus",
+      "engine": "Nitroplus / NPK",
+      "vndbId": "v2016",
+      "exeNames": ["muramasa.exe", "Full Metal Daemon Muramasa.exe"],
+      "savePaths": [
+        "<win_appdata>/Nitroplus/Full Metal Daemon Muramasa",
+        "<win_appdata>/Nitroplus/Soukou Akki Muramasa",
+        "<game_dir>/savedata"
+      ],
+      "notes": "GOG / JAST USA English release saves in %APPDATA%\\Nitroplus\\Full Metal Daemon Muramasa."
+    },
+    {
+      "id": "nitroplus-totono",
+      "title": "YOU and ME and HER: A Love Story",
+      "developer": "Nitroplus",
+      "engine": "Nitroplus / NPK",
+      "vndbId": "v7738",
+      "exeNames": ["totono.exe", "Kimi to Kanojo to Kanojo no Koi.exe"],
+      "savePaths": [
+        "<win_appdata>/Nitroplus/YOU and ME and HER",
+        "<win_appdata>/Nitroplus/YOU and ME and HER A Love Story",
+        "<game_dir>/savedata"
+      ],
+      "notes": "Steam / JAST USA release saves under %APPDATA%\\Nitroplus."
+    },
+    {
+      "id": "nitroplus-tokyo-necro",
+      "title": "Tokyo Necro",
+      "developer": "Nitroplus",
+      "engine": "Nitroplus / NPK",
+      "vndbId": "v13666",
+      "exeNames": ["tokyonecro.exe", "TokyoNecro.exe"],
+      "savePaths": [
+        "<win_appdata>/Nitroplus/Tokyo Necro",
+        "<game_dir>/savedata"
+      ],
+      "notes": "Saves under %APPDATA%\\Nitroplus\\Tokyo Necro."
+    },
+    {
+      "id": "nitro-chiral-generic",
+      "title": "Nitro+CHiRAL (Generic Template)",
+      "developer": "Nitro+CHiRAL",
+      "engine": "Nitroplus / NPK",
+      "vndbId": "",
+      "exeNames": [],
+      "savePaths": [
+        "<win_appdata>/Nitro+CHiRAL/<game_title>",
+        "<win_appdata>/Nitroplus/<game_title>",
+        "<win_documents>/Nitro+CHiRAL/<game_title>",
+        "<game_dir>/savedata"
+      ],
+      "notes": "Generic template for all Nitro+CHiRAL titles. Expands <game_title> to the game folder/title."
+    },
+    {
+      "id": "nitroplus-generic",
+      "title": "Nitroplus / NITRO ORIGIN (Generic Template)",
+      "developer": "Nitroplus",
+      "engine": "Nitroplus / NPK",
+      "vndbId": "",
+      "exeNames": [],
+      "savePaths": [
+        "<win_appdata>/Nitroplus/<game_title>",
+        "<win_appdata>/NITRO ORIGIN/<game_title>",
+        "<win_documents>/Nitroplus/<game_title>",
+        "<game_dir>/savedata"
+      ],
+      "notes": "Generic template for Nitroplus & NITRO ORIGIN titles (.npa / .npk)."
+    },
+    {
+      "id": "sciadv-steins-gate",
+      "title": "STEINS;GATE",
+      "developer": "MAGES. / 5pb. & Nitroplus",
+      "engine": "MAGES. Engine",
+      "vndbId": "v2002",
+      "exeNames": ["Gate.exe", "STEINSGATE.exe", "Launcher.exe"],
+      "savePaths": [
+        "<win_documents>/My Games/mages_steam/STEINS;GATE/eng",
+        "<win_documents>/My Games/mages_steam/STEINS;GATE",
+        "<win_appdata>/Nitroplus/STEINS;GATE"
+      ],
+      "notes": "Steam release stores saves in Documents/My Games/mages_steam/STEINS;GATE."
+    },
+    {
+      "id": "typemoon-fsn-remastered",
+      "title": "Fate/stay night REMASTERED",
+      "developer": "TYPE-MOON",
+      "engine": "Kirikiri / Custom",
+      "vndbId": "v11",
+      "exeNames": ["Fate.exe", "fsn.exe"],
+      "savePaths": [
+        "<win_appdata>/TYPE-MOON/Fate stay night",
+        "<win_documents>/fatestaynight_savedata",
+        "<game_dir>/savedata"
+      ],
+      "notes": "Supports both Remastered and Realta Nua save folders."
+    },
+    {
+      "id": "key-siglus-generic",
+      "title": "Key / VisualArts (SiglusEngine Template)",
+      "developer": "Key / VisualArts",
+      "engine": "SiglusEngine",
+      "vndbId": "",
+      "exeNames": ["SiglusEngine.exe"],
+      "savePaths": [
+        "<game_dir>/savedata",
+        "<win_documents>/VisualArts/<game_title>/savedata",
+        "<win_appdata>/VisualArts/<game_title>/savedata"
+      ],
+      "notes": "Used by Summer Pockets, Rewrite, Harmonia, and modern Key titles."
+    },
+    {
+      "id": "bgi-ethornell-generic",
+      "title": "BGI / Ethornell (Subahibi, Aokana, White Album 2)",
+      "developer": "Frontwing / KeroQ / Sprite / Leaf",
+      "engine": "BGI / Ethornell",
+      "vndbId": "",
+      "exeNames": ["BGI.exe", "Ethornell.exe"],
+      "savePaths": [
+        "<game_dir>/save",
+        "<game_dir>/savedata",
+        "<win_appdata>/<game_title>",
+        "<win_documents>/<game_title>/save"
+      ],
+      "notes": "Used by KeroQ/Makura, Sprite, Overdrive, and August titles."
+    },
+    {
+      "id": "kirikiri-kag-generic",
+      "title": "Kirikiri / KAG (Yuzusoft, TYPE-MOON, Nekopara)",
+      "developer": "Generic",
+      "engine": "Kirikiri / KAG",
+      "vndbId": "",
+      "exeNames": [],
+      "savePaths": [
+        "<game_dir>/savedata",
+        "<game_dir>/save",
+        "<win_documents>/<game_title>/savedata"
+      ],
+      "notes": "Standard Kirikiri2 / Kirikiri Z (.xp3) save paths."
+    },
+    {
+      "id": "renpy-generic",
+      "title": "Ren'Py Engine (Generic Template)",
+      "developer": "Generic",
+      "engine": "Ren'Py",
+      "vndbId": "",
+      "exeNames": [],
+      "savePaths": [
+        "<game_dir>/game/saves",
+        "<win_appdata>/RenPy/<game_title>"
+      ],
+      "notes": "Checks both local game/saves and OS-level RenPy save directory."
+    },
+    {
+      "id": "tyranobuilder-generic",
+      "title": "TyranoBuilder / TyranoScript (Root .sav Files)",
+      "developer": "Generic",
+      "engine": "TyranoBuilder",
+      "vndbId": "",
+      "exeNames": [],
+      "savePaths": [
+        "<game_dir>/*.sav"
+      ],
+      "notes": "Syncs only *.sav files (*_tyrano_data.sav, *_sf.sav) in the game root without uploading game binaries."
+    },
+    {
+      "id": "rpgmaker-vx-xp-root",
+      "title": "RPG Maker XP / VX / VX Ace (Root Save Files)",
+      "developer": "Generic",
+      "engine": "RPG Maker VX / XP",
+      "vndbId": "",
+      "exeNames": [],
+      "savePaths": [
+        "<game_dir>/Save*.rvdata2",
+        "<game_dir>/Save*.rvdata",
+        "<game_dir>/Save*.rxdata"
+      ],
+      "notes": "Syncs only Save*.rvdata2 / .rvdata / .rxdata files in the game root without uploading the game."
+    },
+    {
+      "id": "rpgmaker-mv-mz-generic",
+      "title": "RPG Maker MV / MZ (Generic Template)",
+      "developer": "Generic",
+      "engine": "RPG Maker MV",
+      "vndbId": "",
+      "exeNames": ["Game.exe", "nw.exe"],
+      "savePaths": [
+        "<game_dir>/www/save",
+        "<game_dir>/save"
+      ],
+      "notes": "Covers RPG Maker MV (www/save) and RPG Maker MZ (save)."
+    },
+    {
+      "id": "unity-generic",
+      "title": "Unity Engine (Generic Template)",
+      "developer": "Generic",
+      "engine": "Unity",
+      "vndbId": "",
+      "exeNames": [],
+      "savePaths": [
+        "<win_locallow>/<company>/<game_title>",
+        "<game_dir>/SaveData"
+      ],
+      "notes": "Unity games typically store PlayerPrefs & saves in AppData/LocalLow."
+    }
+  ]
+}

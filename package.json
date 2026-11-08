@@ -1,0 +1,10 @@
+{
+  "name": "vnsync",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix frontend exec -- tauri dev",
+    "build": "npm --prefix frontend exec -- tauri build",
+    "tauri": "npm --prefix frontend exec -- tauri"
+  }
+}
