@@ -1,5 +1,7 @@
 # VNSync
 
+this app is totally vibe-coded by me cuz i really need it right now...
+
 Cross-platform Visual Novel & RPG save synchronization manager built with **Tauri v2 (Rust)** and **Vue 3 + Nuxt UI v4**.
 
 ## Features
