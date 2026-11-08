@@ -10,7 +10,7 @@
     "dev": "vite",
     "tauri:dev": "tauri dev -c ../src-tauri/tauri.conf.json",
     "tauri:build": "tauri build -c ../src-tauri/tauri.conf.json",
-    "build": "run-p type-check \"build-only {@}\" --",
+    "build": "run-s \"build-only {@}\" type-check --",
     "preview": "vite preview",
     "build-only": "vite build",
     "type-check": "vue-tsc --build"
