@@ -472,7 +472,10 @@ impl Database {
     }
 
     pub fn get_active_storage_profile(&self) -> SqlResult<Option<StorageProfile>> {
-        Ok(self.list_storage_profiles()?.into_iter().find(|p| p.is_active))
+        Ok(self
+            .list_storage_profiles()?
+            .into_iter()
+            .find(|p| p.is_active))
     }
 
     pub fn get_settings(&self) -> SqlResult<AppSettings> {

@@ -230,7 +230,10 @@ fn create_manual_snapshot(
         &settings.device_name,
         &label,
     )?;
-    state.db.insert_snapshot(&record).map_err(|e| e.to_string())?;
+    state
+        .db
+        .insert_snapshot(&record)
+        .map_err(|e| e.to_string())?;
     game.head_snapshot_id = Some(record.id.clone());
     state.db.upsert_game(&game).map_err(|e| e.to_string())?;
     Ok(record)
@@ -352,7 +355,10 @@ async fn launch_game(
         .ok_or_else(|| "Game not found".to_string())?;
 
     if game.exe_path.trim().is_empty() {
-        return Err("No executable path configured. Click 'Locate Game' to select the game folder or .exe.".to_string());
+        return Err(
+            "No executable path configured. Click 'Locate Game' to select the game folder or .exe."
+                .to_string(),
+        );
     }
     let exe = PathBuf::from(&game.exe_path);
     if !exe.exists() {
@@ -521,7 +527,8 @@ pub fn run() {
                 let separator = PredefinedMenuItem::separator(app)?;
                 let quit_item = MenuItem::with_id(app, "quit", "Exit VNSync", true, None::<&str>)?;
 
-                let menu = Menu::with_items(app, &[&show_item, &hide_item, &separator, &quit_item])?;
+                let menu =
+                    Menu::with_items(app, &[&show_item, &hide_item, &separator, &quit_item])?;
 
                 let mut tray_builder = TrayIconBuilder::new()
                     .tooltip("VNSync")

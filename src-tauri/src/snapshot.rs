@@ -29,16 +29,14 @@ pub struct SnapshotManifest {
     pub files: Vec<FileDigest>,
 }
 
+pub type CollectedSaveFile = (usize, PathBuf, FileDigest);
+
 /// Scans resolved save paths for a game and computes deterministic BLAKE3 tree hash without writing an archive.
 /// Supports directory paths, single file paths, and filename wildcard rules (e.g. `<game_dir>/*.sav`).
 /// If a rule points to `<game_dir>` itself, only root-level save files are collected (never game binaries/subfolders).
-pub fn compute_current_save_state(
-    game: &Game,
-) -> Result<(String, Vec<(usize, PathBuf, FileDigest)>), String> {
-    let mut collected: Vec<(usize, PathBuf, FileDigest)> = Vec::new();
-    let game_dir = Path::new(&game.exe_path)
-        .parent()
-        .map(|p| p.to_path_buf());
+pub fn compute_current_save_state(game: &Game) -> Result<(String, Vec<CollectedSaveFile>), String> {
+    let mut collected: Vec<CollectedSaveFile> = Vec::new();
+    let game_dir = Path::new(&game.exe_path).parent().map(|p| p.to_path_buf());
 
     for (root_idx, pattern) in game.save_paths.iter().enumerate() {
         let root_path = resolve_save_path(pattern, &game.exe_path, &game.proton_prefix);
@@ -133,7 +131,8 @@ pub fn compute_current_save_state(
 
     let mut tree_hasher = blake3::Hasher::new();
     for (_, _, item) in &collected {
-        tree_hasher.update(format!("{}:{}:{}\n", item.root_index, item.rel_path, item.blake3).as_bytes());
+        tree_hasher
+            .update(format!("{}:{}:{}\n", item.root_index, item.rel_path, item.blake3).as_bytes());
     }
     let tree_hash = format!("blake3:{}", tree_hasher.finalize().to_hex());
 
@@ -243,8 +242,8 @@ fn target_restore_dir_for_rule(resolved: &Path) -> PathBuf {
         .and_then(|s| s.to_str())
         .map(|s| s.contains('*') || s.contains('?'))
         .unwrap_or(false);
-    let is_single_file = resolved.is_file()
-        || (!resolved.is_dir() && resolved.extension().is_some());
+    let is_single_file =
+        resolved.is_file() || (!resolved.is_dir() && resolved.extension().is_some());
 
     if is_glob || is_single_file {
         resolved
@@ -357,8 +356,7 @@ mod tests {
 
         // Corrupt the save file, then restore from snapshot
         fs::write(save_dir.join("slot1.sav"), b"corrupted").unwrap();
-        let count =
-            restore_snapshot_archive(&game, Path::new(&record.local_archive_path)).unwrap();
+        let count = restore_snapshot_archive(&game, Path::new(&record.local_archive_path)).unwrap();
         assert_eq!(count, 1);
         assert_eq!(
             fs::read_to_string(save_dir.join("slot1.sav")).unwrap(),
@@ -378,7 +376,11 @@ mod tests {
         fs::write(&exe_path, b"huge_executable_binary").unwrap();
         fs::write(game_dir.join("nw.dll"), b"huge_dll").unwrap();
         fs::write(game_dir.join("resources/app.asar"), b"huge_asar_archive").unwrap();
-        fs::write(game_dir.join("resources/app/tyrano/tyrano.js"), b"engine_js").unwrap();
+        fs::write(
+            game_dir.join("resources/app/tyrano/tyrano.js"),
+            b"engine_js",
+        )
+        .unwrap();
 
         // Root save files that SHOULD be packed
         fs::write(game_dir.join("mygame_tyrano_data.sav"), b"save_slot_1").unwrap();
@@ -414,8 +416,14 @@ mod tests {
 
         // Each rule (`<game_dir>/*.sav` and `<game_dir>`) should only see the 2 .sav files, never .exe/.dll/.asar/subfolders
         assert!(manifest.files.iter().all(|f| f.rel_path.ends_with(".sav")));
-        assert!(!manifest.files.iter().any(|f| f.rel_path.contains("MyTyranoVN.exe")));
-        assert!(!manifest.files.iter().any(|f| f.rel_path.contains("app.asar")));
+        assert!(!manifest
+            .files
+            .iter()
+            .any(|f| f.rel_path.contains("MyTyranoVN.exe")));
+        assert!(!manifest
+            .files
+            .iter()
+            .any(|f| f.rel_path.contains("app.asar")));
 
         // Corrupt a root save file and restore
         fs::write(game_dir.join("mygame_tyrano_data.sav"), b"wiped").unwrap();

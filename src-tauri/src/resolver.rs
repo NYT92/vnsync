@@ -50,7 +50,10 @@ pub fn parse_save_locations_json(raw: &str) -> Result<Vec<SaveLocationEntry>, St
     if let Ok(entries) = serde_json::from_str::<Vec<SaveLocationEntry>>(raw) {
         return Ok(entries);
     }
-    Err("Invalid save_locations JSON format: expected { entries: [...] } or an array of entries".to_string())
+    Err(
+        "Invalid save_locations JSON format: expected { entries: [...] } or an array of entries"
+            .to_string(),
+    )
 }
 
 pub fn get_active_save_locations(app_data_dir: &Path) -> SaveLocationDbStatus {
@@ -111,11 +114,7 @@ fn infer_game_title(exe_path: &str) -> String {
 /// Expands portable path tokens (`<game_dir>`, `<win_appdata>`, `<win_locallow>`, `<win_documents>`, `<game_title>`)
 /// into concrete host paths. When `proton_prefix` is set on Linux/Steam Deck, Windows tokens map inside
 /// `<proton_prefix>/drive_c/users/steamuser/...`.
-pub fn resolve_save_path(
-    canonical_pattern: &str,
-    exe_path: &str,
-    proton_prefix: &str,
-) -> PathBuf {
+pub fn resolve_save_path(canonical_pattern: &str, exe_path: &str, proton_prefix: &str) -> PathBuf {
     let game_dir = Path::new(exe_path)
         .parent()
         .map(|p| p.to_path_buf())
@@ -304,7 +303,10 @@ pub fn resolve_or_remap_exe_path(exe_path: &str, game_library_path: &str) -> (St
 }
 
 /// Locates a game executable when the user selects either a `.exe` file or a game directory.
-pub fn locate_game_executable(selected_path: &str, previous_exe_path: &str) -> Result<String, String> {
+pub fn locate_game_executable(
+    selected_path: &str,
+    previous_exe_path: &str,
+) -> Result<String, String> {
     let path = Path::new(selected_path.trim());
     if !path.exists() {
         return Err(format!("Selected path does not exist: {}", selected_path));
@@ -398,10 +400,7 @@ pub fn to_canonical_path(raw_path: &str, exe_path: &str, proton_prefix: &str) ->
         };
         let roaming = user_root.join("AppData/Roaming");
         if let Ok(rel) = raw.strip_prefix(&roaming) {
-            return format!(
-                "<win_appdata>/{}",
-                rel.to_string_lossy().replace('\\', "/")
-            );
+            return format!("<win_appdata>/{}", rel.to_string_lossy().replace('\\', "/"));
         }
         let locallow = user_root.join("AppData/LocalLow");
         if let Ok(rel) = raw.strip_prefix(&locallow) {
@@ -414,10 +413,7 @@ pub fn to_canonical_path(raw_path: &str, exe_path: &str, proton_prefix: &str) ->
 
     if let Some(roaming) = dirs::data_dir() {
         if let Ok(rel) = raw.strip_prefix(&roaming) {
-            return format!(
-                "<win_appdata>/{}",
-                rel.to_string_lossy().replace('\\', "/")
-            );
+            return format!("<win_appdata>/{}", rel.to_string_lossy().replace('\\', "/"));
         }
     }
 
@@ -518,7 +514,9 @@ pub fn detect_game_from_exe_with_db(
     }
 
     // 1. Ren'Py check (`renpy/` directory or `game/saves`)
-    if canonical_paths.is_empty() && (game_dir.join("renpy").is_dir() || game_dir.join("game").is_dir()) {
+    if canonical_paths.is_empty()
+        && (game_dir.join("renpy").is_dir() || game_dir.join("game").is_dir())
+    {
         let mut is_renpy = game_dir.join("renpy").is_dir();
         if !is_renpy {
             if let Ok(entries) = fs::read_dir(game_dir.join("game")) {
@@ -553,9 +551,7 @@ pub fn detect_game_from_exe_with_db(
         if let Ok(entries) = fs::read_dir(&game_dir) {
             let has_rgss = entries.flatten().any(|e| {
                 let name = e.file_name().to_string_lossy().to_lowercase();
-                name.ends_with(".rgssad")
-                    || name.ends_with(".rgss2a")
-                    || name.ends_with(".rgss3a")
+                name.ends_with(".rgssad") || name.ends_with(".rgss2a") || name.ends_with(".rgss3a")
             });
             if has_rgss {
                 engine = "RPG Maker VX / XP".to_string();
@@ -598,9 +594,12 @@ pub fn detect_game_from_exe_with_db(
     // 4. Kirikiri / KAG (`data.xp3` or `*.xp3`)
     if engine == "Custom / Generic" {
         if let Ok(entries) = fs::read_dir(&game_dir) {
-            let has_xp3 = entries
-                .flatten()
-                .any(|e| e.file_name().to_string_lossy().to_lowercase().ends_with(".xp3"));
+            let has_xp3 = entries.flatten().any(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .ends_with(".xp3")
+            });
             if has_xp3 {
                 engine = "Kirikiri / KAG".to_string();
                 for candidate in ["savedata", "save", "data/save"] {
@@ -722,7 +721,10 @@ fn detect_renpy_save_dir(game_dir: &Path) -> Option<String> {
                 || trimmed.starts_with("config.save_directory")
             {
                 if let Some(eq_idx) = trimmed.find('=') {
-                    let val = trimmed[eq_idx + 1..].trim().trim_matches('"').trim_matches('\'');
+                    let val = trimmed[eq_idx + 1..]
+                        .trim()
+                        .trim_matches('"')
+                        .trim_matches('\'');
                     if !val.is_empty() {
                         return Some(val.to_string());
                     }
@@ -910,11 +912,7 @@ mod tests {
     #[test]
     fn test_cross_user_path_remap_and_locate() {
         assert_eq!(
-            to_canonical_path(
-                "C:\\Users\\Alice\\AppData\\Roaming\\RenPy\\MyVN",
-                "",
-                ""
-            ),
+            to_canonical_path("C:\\Users\\Alice\\AppData\\Roaming\\RenPy\\MyVN", "", ""),
             "<win_appdata>/RenPy/MyVN"
         );
         assert_eq!(

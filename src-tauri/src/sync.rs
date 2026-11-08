@@ -164,7 +164,8 @@ pub async fn sync_game(
             &settings.device_name,
             "Auto-checkpoint before sync",
         )?;
-        db.insert_snapshot(&snap_record).map_err(|e| e.to_string())?;
+        db.insert_snapshot(&snap_record)
+            .map_err(|e| e.to_string())?;
         game.head_snapshot_id = Some(snap_record.id.clone());
         local_head = Some(snap_record);
     }
@@ -258,7 +259,10 @@ pub async fn sync_game(
                 let snap = pull_snapshot_from_remote(&op, &mut game, r_head, vault_dir, db).await?;
                 return Ok(SyncOutcome {
                     action: "pulled".to_string(),
-                    message: format!("Fast-forward pulled newer saves from {}", r_head.device_name),
+                    message: format!(
+                        "Fast-forward pulled newer saves from {}",
+                        r_head.device_name
+                    ),
                     local_snapshot: Some(snap),
                     remote_head: Some(r_head.clone()),
                 });
@@ -285,8 +289,8 @@ async fn push_snapshot_to_remote(
     game: &Game,
     snap: &SnapshotRecord,
 ) -> Result<RemoteGameHead, String> {
-    let archive_bytes =
-        fs::read(&snap.local_archive_path).map_err(|e| format!("Failed reading local archive: {}", e))?;
+    let archive_bytes = fs::read(&snap.local_archive_path)
+        .map_err(|e| format!("Failed reading local archive: {}", e))?;
     let remote_archive_path = format!("games/{}/snapshots/{}.tar.zst", game.id, snap.id);
     op.write(&remote_archive_path, archive_bytes)
         .await
@@ -320,8 +324,10 @@ async fn pull_snapshot_from_remote(
     vault_dir: &Path,
     db: &Database,
 ) -> Result<SnapshotRecord, String> {
-    let remote_archive_path =
-        format!("games/{}/snapshots/{}.tar.zst", game.id, r_head.head_snapshot_id);
+    let remote_archive_path = format!(
+        "games/{}/snapshots/{}.tar.zst",
+        game.id, r_head.head_snapshot_id
+    );
     let data = op
         .read(&remote_archive_path)
         .await
@@ -349,7 +355,8 @@ async fn pull_snapshot_from_remote(
         pinned: false,
     };
 
-    db.insert_snapshot(&snap_record).map_err(|e| e.to_string())?;
+    db.insert_snapshot(&snap_record)
+        .map_err(|e| e.to_string())?;
     game.head_snapshot_id = Some(snap_record.id.clone());
     game.sync_status = "Synced".to_string();
     db.upsert_game(game).map_err(|e| e.to_string())?;
@@ -539,16 +546,16 @@ pub fn merge_library_catalog(
     }
 
     let heal_res = heal_library_paths(db)?;
-    let total_ReMap = remapped_paths + heal_res.remapped_paths;
+    let total_remapped = remapped_paths + heal_res.remapped_paths;
     Ok(LibrarySyncOutcome {
         added,
         updated,
-        remapped_paths: total_ReMap,
+        remapped_paths: total_remapped,
         missing_exe_count: heal_res.missing_exe_count,
         total_games: heal_res.total_games,
         message: format!(
             "Library synced: {} added, {} updated, {} user paths remapped ({} need manual folder selection)",
-            added, updated, total_ReMap, heal_res.missing_exe_count
+            added, updated, total_remapped, heal_res.missing_exe_count
         ),
     })
 }
