@@ -295,6 +295,7 @@ const handleSave = async () => {
     v-model:open="isOpen"
     title="Edit Game & Metadata"
     description="Update VNDB metadata, cover art, progress, executable path, or cross-platform save rules."
+    :ui="{ content: 'top-8 max-h-[calc(100%-2rem)]', overlay: 'top-8' }"
   >
     <template #body>
       <div class="space-y-5">

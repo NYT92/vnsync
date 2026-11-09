@@ -217,7 +217,7 @@ const handleSaveAll = async () => {
                       Storage Provider Configuration
                     </h2>
                     <p class="text-xs text-muted">
-                      Powered by Apache OpenDAL. Store encrypted/compressed <code>.tar.zst</code> save snapshots on S3, R2, WebDAV, or a synced folder.
+                      Store encrypted/compressed & save snapshots on S3, R2, WebDAV, or a synced folder.
                     </p>
                   </div>
                   <UBadge

@@ -16,7 +16,7 @@ export default defineConfig({
       ui: {
         colors: {
           primary: "indigo",
-          neutral: "slate",
+          neutral: "stone",
         },
         dashboardGroup: {
           base: "fixed top-8 inset-x-0 bottom-0 flex overflow-hidden",

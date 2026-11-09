@@ -489,7 +489,7 @@ const handleSubmit = async () => {
                 </UFieldGroup>
               </UFormField>
 
-              <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div class="grid gap-4">
                 <UFormField label="Detected Engine Profile">
                   <USelect v-model="form.engine" :items="engines" size="lg" class="w-full" />
                 </UFormField>

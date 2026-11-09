@@ -74,7 +74,6 @@ const confirmCloseAction = async (action: 'tray' | 'exit') => {
       <span class="text-xs font-semibold tracking-tight text-highlighted" data-tauri-drag-region>
         VNSync
       </span>
-      <UBadge label="v0.1" size="xs" color="primary" variant="subtle" />
     </div>
 
     <div class="flex-1 flex justify-center items-center" data-tauri-drag-region>

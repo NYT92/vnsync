@@ -1,14 +1,7 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { getVersion } from '@tauri-apps/api/app'
 import AppLogo from '@/components/AppLogo.vue'
-
-const appInfo = {
-  name: 'VNSync',
-  version: '0.1.0',
-  description: 'Cross-Platform Visual Novel & RPG Save Sync Manager',
-  developer: 'NYT92',
-  website: 'https://github.com/nyt92/vnsync',
-  license: 'GPL-3.0'
-}
 
 const features = [
   {
@@ -57,7 +50,65 @@ const technologies = [
   { name: 'Nuxt UI', version: '4.0.1', url: 'https://ui.nuxt.com/' },
   { name: 'Tailwind CSS', version: '4.1.14', url: 'https://tailwindcss.com/' }
 ]
+
+const currentVersion = ref('0.0.0')
+
+onMounted(async () => {
+  try {
+    currentVersion.value = await getVersion()
+  } catch {
+    // not running inside Tauri; keep static version
+  }
+})
+
+const latest = ref<{ version: string, url: string, notes: string } | null>(null)
+const isChecking = ref(false)
+const checkError = ref('')
+const lastChecked = ref<Date | null>(null)
+
+// Compare dotted numeric versions; returns true when a > b.
+const isNewer = (a: string, b: string) => {
+  const pa = a.split('.').map(n => parseInt(n) || 0)
+  const pb = b.split('.').map(n => parseInt(n) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0)
+  }
+  return false
+}
+
+const updateAvailable = () => !!latest.value && isNewer(latest.value.version, currentVersion.value)
+
+const checkForUpdates = async () => {
+  isChecking.value = true
+  checkError.value = ''
+  try {
+    const res = await fetch('https://api.github.com/repos/nyt92/vnsync/releases/latest')
+    if (!res.ok) throw new Error(`GitHub API returned ${res.status}. Please try again later or disable your firewall/proxy.`)
+    const data = await res.json()
+    latest.value = {
+      version: String(data.tag_name).replace(/^v/, ''),
+      url: data.html_url,
+      notes: data.body ?? ''
+    }
+    lastChecked.value = new Date()
+  } catch (e) {
+    checkError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    isChecking.value = false
+  }
+}
+
+const appInfo = {
+  name: 'VNSync',
+  version: currentVersion.value,
+  description: 'Cross-Platform Visual Novel & RPG Save Sync Manager',
+  developer: 'NYT92',
+  website: 'https://github.com/nyt92/vnsync',
+  license: 'GPL-3.0'
+}
+
 </script>
+
 
 <template>
   <UDashboardPanel id="about-panel">
@@ -95,7 +146,7 @@ const technologies = [
                 <h1 class="text-2xl font-bold text-highlighted">
                   {{ appInfo.name }}
                 </h1>
-                <UBadge :label="`v${appInfo.version}`" color="primary" variant="subtle" size="lg" />
+                <UBadge :label="`v${currentVersion}`" color="primary" variant="subtle" size="lg" />
                 <UBadge :label="appInfo.license" color="success" variant="subtle" size="lg" />
               </div>
               <p class="text-sm text-muted">
@@ -136,22 +187,67 @@ const technologies = [
 
         <UCard variant="outline">
           <template #header>
-            <h3 class="text-sm font-semibold text-highlighted">
-              Technology Stack
-            </h3>
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="text-sm font-semibold text-highlighted">
+                Updates
+              </h2>
+              <UButton
+                label="Check for Updates"
+                icon="i-heroicons-arrow-path"
+                color="primary"
+                variant="subtle"
+                :loading="isChecking"
+                @click="checkForUpdates"
+              />
+            </div>
           </template>
 
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <UCard
-              v-for="tech in technologies"
-              :key="tech.name"
+          <div class="space-y-3 text-sm">
+            <div class="flex items-center gap-2">
+              <span class="text-muted">Installed version:</span>
+              <UBadge :label="`v${currentVersion}`" color="neutral" variant="subtle" />
+              <template v-if="latest">
+                <span class="text-muted">Latest:</span>
+                <UBadge
+                  :label="`v${latest.version}`"
+                  :color="updateAvailable() ? 'warning' : 'success'"
+                  variant="subtle"
+                />
+              </template>
+            </div>
+
+            <UAlert
+              v-if="checkError"
+              color="error"
               variant="subtle"
-            >
-              <div class="flex items-center justify-between">
-                <span class="font-medium text-xs text-highlighted">{{ tech.name }}</span>
-                <UBadge :label="tech.version" color="neutral" variant="outline" size="lg" />
-              </div>
-            </UCard>
+              icon="i-heroicons-exclamation-triangle"
+              title="Update check failed"
+              :description="checkError"
+            />
+            <UAlert
+              v-else-if="latest && updateAvailable()"
+              color="warning"
+              variant="subtle"
+              icon="i-heroicons-arrow-down-circle"
+              :title="`VNSync v${latest.version} is available`"
+              :actions="[{ label: 'Download', to: latest.url, target: '_blank', color: 'warning', variant: 'solid' }]"
+            />
+            <UAlert
+              v-else-if="latest"
+              color="success"
+              variant="subtle"
+              icon="i-heroicons-check-circle"
+              title="You are on the latest version"
+            />
+
+            <pre
+              v-if="latest && updateAvailable() && latest.notes"
+              class="text-xs text-muted whitespace-pre-wrap max-h-48 overflow-auto rounded-md bg-elevated/60 p-3"
+            >{{ latest.notes }}</pre>
+
+            <p v-if="lastChecked" class="text-xs text-muted">
+              Last checked {{ lastChecked.toLocaleString() }}
+            </p>
           </div>
         </UCard>
       </div>

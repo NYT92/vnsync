@@ -29,4 +29,6 @@ body,
   width: 100vw;
   overflow: hidden;
   user-select: none;
+  font-family: "Inter", sans-serif;
 }
+
