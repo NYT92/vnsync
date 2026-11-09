@@ -4,6 +4,8 @@ this app is totally vibe-coded by me cuz i really need it right now...
 
 Cross-platform Visual Novel & RPG save synchronization manager built with **Tauri v2 (Rust)** and **Vue 3 + Nuxt UI v4**.
 
+<img width="1349" height="854" alt="vnsync_YppzdbcNQ0" src="https://github.com/user-attachments/assets/d30f50b4-9616-441d-8048-4a5b0b9ba5ff" />
+
 ## Features
 
 - **Cross-OS & Steam Deck Save Path Resolver**: Stores portable save path rules (`<game_dir>`, `<win_appdata>`, `<win_locallow>`, `<win_documents>`) and translates them automatically across Windows, macOS, and Linux Wine/Proton `compatdata` prefixes.
@@ -33,6 +35,10 @@ cargo test
 # Launch Tauri desktop app in development mode
 cargo tauri dev
 ```
+
+## Caution
+
+This app is still in development and 90% vibe-coded with the user guided manual. With this proof and working concept, we might build the actual app with many more feature based on my own plan. Use it or not it up to you because the app still have some bug in code to be fixed.
 
 ## License
 
