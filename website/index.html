@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VNSync — Cross-Platform Visual Novel &amp; RPG Save Manager</title>
+  <meta name="description" content="Cross-platform Visual Novel and RPG save synchronization manager built with Tauri and Rust.">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --bg-alt: #f6f8fa;
+      --text: #1f2328;
+      --muted: #59636e;
+      --border: #d1d9e0;
+      --accent: #0969da;
+      --accent-hover: #0550ae;
+      --btn-text: #ffffff;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --bg-alt: #161b22;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --border: #30363d;
+        --accent: #2f81f7;
+        --accent-hover: #388bfd;
+        --btn-text: #ffffff;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      line-height: 1.6;
+      color: var(--text);
+      background-color: var(--bg);
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+
+    header {
+      border-bottom: 1px solid var(--border);
+      background-color: var(--bg-alt);
+    }
+
+    .nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 0;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .brand {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 20px;
+      font-size: 0.95rem;
+    }
+
+    .hero {
+      padding: 48px 0 36px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .hero h1 {
+      margin: 0 0 12px;
+      font-size: 2.25rem;
+      line-height: 1.25;
+    }
+
+    .hero p {
+      margin: 0 0 24px;
+      font-size: 1.125rem;
+      color: var(--muted);
+      max-width: 700px;
+    }
+
+    .screenshot {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      display: block;
+      margin-top: 24px;
+    }
+
+    .screenshots-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    figure {
+      margin: 0;
+      background-color: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+    }
+
+    figure img {
+      width: 100%;
+      height: auto;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      display: block;
+    }
+
+    figcaption {
+      margin-top: 8px;
+      font-size: 0.9rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    section {
+      padding: 40px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h2 {
+      margin: 0 0 20px;
+      font-size: 1.5rem;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 1.1rem;
+    }
+
+    .download-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background-color: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .card p {
+      margin: 0 0 16px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .btn-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .btn {
+      display: inline-block;
+      background-color: var(--accent);
+      color: var(--btn-text);
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      border: 1px solid transparent;
+    }
+
+    .btn:hover {
+      background-color: var(--accent-hover);
+      text-decoration: none;
+    }
+
+    .btn-secondary {
+      background-color: transparent;
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover {
+      background-color: var(--bg);
+      text-decoration: none;
+    }
+
+    .feature-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+
+    .feature-item {
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background-color: var(--bg-alt);
+    }
+
+    .feature-item p {
+      margin: 0;
+      font-size: 0.925rem;
+      color: var(--muted);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 0.95rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+    }
+
+    th {
+      background-color: var(--bg-alt);
+      font-weight: 600;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 0.875em;
+      background-color: var(--bg-alt);
+      padding: 2px 5px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    .notice {
+      background-color: var(--bg-alt);
+      border-left: 4px solid var(--accent);
+      padding: 12px 16px;
+      margin-top: 20px;
+      font-size: 0.925rem;
+      color: var(--muted);
+    }
+
+    footer {
+      padding: 28px 0;
+      font-size: 0.9rem;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="container nav">
+      <a href="#" class="brand">VNSync</a>
+      <nav class="nav-links">
+        <a href="#download">Download</a>
+        <a href="#screenshots">Screenshots</a>
+        <a href="#features">Features</a>
+        <a href="#details">Technical Info</a>
+        <a href="https://github.com/NYT92/vnsync" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="hero">
+      <h1>VNSync</h1>
+      <p>Cross-platform Visual Novel &amp; RPG save synchronization manager built with Tauri v2 (Rust) and Vue 3. Sync saves seamlessly between Windows, macOS, Linux, and Steam Deck.</p>
+      <div class="btn-group">
+        <a class="btn" href="#download">Download <span id="version-badge">Latest</span></a>
+        <a class="btn btn-secondary" href="https://github.com/NYT92/vnsync/releases" target="_blank" rel="noopener">All GitHub Releases</a>
+        <a class="btn btn-secondary" href="https://github.com/NYT92/vnsync" target="_blank" rel="noopener">Source Code</a>
+      </div>
+      <img class="screenshot" src="assets/img/vnsync_homepage.webp" alt="VNSync Homepage Screenshot">
+    </div>
+
+    <section id="download">
+      <h2>Download</h2>
+      <p style="color: var(--muted); margin-top: 0;">Select the installer for your operating system from the latest GitHub release:</p>
+
+      <div class="download-grid">
+        <div class="card">
+          <div>
+            <h3>Windows</h3>
+            <p>Windows 10 / 11 (64-bit). Available as NSIS setup executable or MSI package.</p>
+          </div>
+          <div class="btn-group" id="dl-windows">
+            <a class="btn" href="https://github.com/NYT92/vnsync/releases/latest" target="_blank" rel="noopener">Download for Windows (.exe / .msi)</a>
+          </div>
+        </div>
+
+        <div class="card">
+          <div>
+            <h3>macOS</h3>
+            <p>Universal binary supporting both Apple Silicon (M1/M2/M3/M4) and Intel Macs.</p>
+          </div>
+          <div class="btn-group" id="dl-macos">
+            <a class="btn" href="https://github.com/NYT92/vnsync/releases/latest" target="_blank" rel="noopener">Download for macOS (.dmg)</a>
+          </div>
+        </div>
+
+        <div class="card">
+          <div>
+            <h3>Linux &amp; Steam Deck</h3>
+            <p>Available as portable AppImage, Debian/Ubuntu package (.deb), or RPM.</p>
+          </div>
+          <div class="btn-group" id="dl-linux">
+            <a class="btn" href="https://github.com/NYT92/vnsync/releases/latest" target="_blank" rel="noopener">Download for Linux (.AppImage / .deb)</a>
+          </div>
+        </div>
+      </div>
+
+      <p style="font-size: 0.9rem; color: var(--muted); margin: 0;">
+        Looking for older versions, checksums, or source tarballs? Visit the <a href="https://github.com/NYT92/vnsync/releases" target="_blank" rel="noopener">GitHub Releases page</a>.
+      </p>
+    </section>
+
+    <section id="screenshots">
+      <h2>Screenshots</h2>
+      <div class="screenshots-grid">
+        <figure>
+          <a href="assets/img/vnsync_homepage.webp" target="_blank" rel="noopener">
+            <img src="assets/img/vnsync_homepage.webp" alt="VNSync Library Overview" loading="lazy">
+          </a>
+          <figcaption>Game Library &amp; Overview</figcaption>
+        </figure>
+        <figure>
+          <a href="assets/img/vnsync_game_section.webp" target="_blank" rel="noopener">
+            <img src="assets/img/vnsync_game_section.webp" alt="VNSync Game Details and Snapshots" loading="lazy">
+          </a>
+          <figcaption>Game Details &amp; Save Snapshots</figcaption>
+        </figure>
+        <figure>
+          <a href="assets/img/vnsync_config.webp" target="_blank" rel="noopener">
+            <img src="assets/img/vnsync_config.webp" alt="VNSync Storage Configuration" loading="lazy">
+          </a>
+          <figcaption>Sync Backend Configuration</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="features">
+      <h2>Features</h2>
+      <div class="feature-list">
+        <div class="feature-item">
+          <h3>Cross-OS &amp; Steam Deck Paths</h3>
+          <p>Stores portable path rules (<code>&lt;game_dir&gt;</code>, <code>&lt;win_appdata&gt;</code>, <code>&lt;win_locallow&gt;</code>, <code>&lt;win_documents&gt;</code>) and translates them across Windows, macOS, and Linux Wine/Proton <code>compatdata</code> prefixes.</p>
+        </div>
+        <div class="feature-item">
+          <h3>Engine Fingerprinting</h3>
+          <p>Automatically detects save directories for Ren'Py, RPG Maker (MV, MZ, VX Ace, VX, XP), Kirikiri / KAG (<code>.xp3</code>), and Unity games.</p>
+        </div>
+        <div class="feature-item">
+          <h3>Content-Addressable Vault</h3>
+          <p>Packs save directories into deterministic <code>.tar.zst</code> archives hashed with BLAKE3. Keeps local safety snapshots before any restore or sync overwrite.</p>
+        </div>
+        <div class="feature-item">
+          <h3>Lineage Conflict Detection</h3>
+          <p>Tracks parent snapshot IDs and BLAKE3 tree hashes for safe fast-forward push/pull, or side-by-side conflict resolution when two devices diverge.</p>
+        </div>
+        <div class="feature-item">
+          <h3>Unified Storage Backends</h3>
+          <p>Powered by Apache OpenDAL. Sync via S3-compatible storage (Cloudflare R2, AWS S3, MinIO, Backblaze B2), WebDAV (Nextcloud, ownCloud, Synology), or local/network folders.</p>
+        </div>
+        <div class="feature-item">
+          <h3>VNDB Metadata &amp; Launcher</h3>
+          <p>Fetches game titles, Japanese titles, cover art, and descriptions from VNDB API v2. Launches games with pre-flight save pull, tracks playtime, and snapshots on exit.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="details">
+      <h2>Technical Specifications</h2>
+      <table>
+        <tbody>
+          <tr>
+            <th>Supported Engines</th>
+            <td>Ren'Py, RPG Maker (MV / MZ / VX Ace / VX / XP), Kirikiri / KAG, Unity, and custom path rules</td>
+          </tr>
+          <tr>
+            <th>Sync Storage Backends</th>
+            <td>S3 / R2 / B2 / MinIO, WebDAV (Nextcloud / ownCloud), Local &amp; Shared Network Folders</td>
+          </tr>
+          <tr>
+            <th>Archive &amp; Integrity</th>
+            <td>Zstandard (<code>.tar.zst</code>) compression with deterministic BLAKE3 content hashing</td>
+          </tr>
+          <tr>
+            <th>Stack</th>
+            <td>Tauri v2 (Rust backend, SQLite local catalog) + Vue 3 / Nuxt UI v4 frontend</td>
+          </tr>
+          <tr>
+            <th>License</th>
+            <td>GPL-3.0 Open Source</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="notice">
+        <strong>Development Status:</strong> VNSync is under active development. Automatic local backup snapshots are created before any sync overwrite, but keeping independent backups of critical saves is always recommended.
+      </div>
+    </section>
+  </main>
+
+  <footer class="container">
+    <div>VNSync &middot; Released under the GPL-3.0 License</div>
+    <div>
+      <a href="https://github.com/NYT92/vnsync" target="_blank" rel="noopener">GitHub Repository</a> &middot;
+      <a href="https://github.com/NYT92/vnsync/issues" target="_blank" rel="noopener">Report an Issue</a>
+    </div>
+  </footer>
+
+  <script>
+    (async function loadLatestRelease() {
+      try {
+        const res = await fetch('https://api.github.com/repos/NYT92/vnsync/releases/latest');
+        if (!res.ok) return;
+        const release = await res.json();
+        if (release.tag_name) {
+          document.getElementById('version-badge').textContent = release.tag_name;
+        }
+        if (!Array.isArray(release.assets) || release.assets.length === 0) return;
+
+        const winAssets = release.assets.filter(a => /\.(exe|msi)$/i.test(a.name));
+        const macAssets = release.assets.filter(a => /\.(dmg|app\.tar\.gz)$/i.test(a.name));
+        const linuxAssets = release.assets.filter(a => /\.(AppImage|deb|rpm)$/i.test(a.name));
+
+        function renderButtons(containerId, assets, labelFn) {
+          if (!assets.length) return;
+          const el = document.getElementById(containerId);
+          el.innerHTML = '';
+          assets.forEach((asset, idx) => {
+            const a = document.createElement('a');
+            a.href = asset.browser_download_url;
+            a.className = idx === 0 ? 'btn' : 'btn btn-secondary';
+            a.textContent = labelFn(asset.name);
+            el.appendChild(a);
+          });
+        }
+
+        renderButtons('dl-windows', winAssets, name => {
+          if (name.endsWith('.exe')) return 'Download Installer (.exe)';
+          if (name.endsWith('.msi')) return 'Download MSI (.msi)';
+          return name;
+        });
+
+        renderButtons('dl-macos', macAssets, name => {
+          if (name.endsWith('.dmg')) return 'Download Disk Image (.dmg)';
+          return name;
+        });
+
+        renderButtons('dl-linux', linuxAssets, name => {
+          if (name.endsWith('.AppImage')) return 'Download AppImage';
+          if (name.endsWith('.deb')) return 'Download .deb';
+          if (name.endsWith('.rpm')) return 'Download .rpm';
+          return name;
+        });
+      } catch (_) {
+        // Fallback links to /releases/latest remain intact
+      }
+    })();
+  </script>
+</body>
+</html>
