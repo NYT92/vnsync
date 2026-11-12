@@ -43,7 +43,7 @@ export interface SnapshotRecord {
 export interface StorageProfile {
   id: string
   name: string
-  providerType: 's3' | 'webdav' | 'local_fs'
+  providerType: 's3' | 'webdav' | 'local_fs' | 'vnsync_server'
   endpoint: string
   bucket: string
   region: string

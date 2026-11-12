@@ -36,6 +36,21 @@ cargo test
 cargo tauri dev
 ```
 
+## Self-hosted server
+
+`server/` is a small sync server you can run on a home server or VPS instead of S3/WebDAV. It rejects a push when another device already moved the save forward, keeps the last `KEEP_SNAPSHOTS` snapshots per game, and lists them at `GET /api/games/<game id>/history`.
+
+```bash
+cd server
+npm install
+cp .env.example .env   # set SECRET to a long random string
+npm start              # needs Node.js v24.2+
+```
+
+In the app: **Settings → Cloud & Storage Backend → VNSync Server (Self-Hosted)**, then enter the server URL (for example `http://192.168.1.10:3000`) and the `SECRET` as token.
+
+The token travels in a request header. Put the server behind an HTTPS reverse proxy before you expose it outside your home network.
+
 ## Caution
 
 This app is still in development and 90% vibe-coded with the user guided manual. With this proof and working concept, we might build the actual app with many more feature based on my own plan. Use it or not it up to you because the app still have some bug in code to be fixed.

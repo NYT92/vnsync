@@ -53,7 +53,7 @@ pub struct SnapshotRecord {
 pub struct StorageProfile {
     pub id: String,
     pub name: String,
-    pub provider_type: String, // "s3", "webdav", "local_fs"
+    pub provider_type: String, // "s3", "webdav", "local_fs", "vnsync_server"
     pub endpoint: String,
     pub bucket: String,
     pub region: String,

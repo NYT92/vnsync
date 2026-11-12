@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VNSync Docs — User Guide &amp; Self-Hosted Server</title>
+  <meta name="description" content="Full user guide for VNSync: adding games, save path rules, syncing, conflicts, storage backends, and the self-hosted VNSync server.">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --bg-alt: #f6f8fa;
+      --text: #1f2328;
+      --muted: #59636e;
+      --border: #d1d9e0;
+      --accent: #0969da;
+      --warn: #9a6700;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --bg-alt: #161b22;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --border: #30363d;
+        --accent: #2f81f7;
+        --warn: #d29922;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      line-height: 1.6;
+      color: var(--text);
+      background-color: var(--bg);
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+
+    header { border-bottom: 1px solid var(--border); background-color: var(--bg-alt); }
+
+    .nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 0;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .brand { font-size: 1.25rem; font-weight: 700; color: var(--text); }
+    .nav-links { display: flex; gap: 20px; font-size: 0.95rem; flex-wrap: wrap; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      gap: 40px;
+      padding: 32px 0;
+    }
+
+    .toc {
+      position: sticky;
+      top: 16px;
+      align-self: start;
+      font-size: 0.9rem;
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+    }
+
+    .toc ol { list-style: none; margin: 0; padding: 0; }
+    .toc li { margin: 0 0 6px; }
+    .toc ol ol { padding-left: 14px; margin-top: 6px; }
+    .toc a { color: var(--muted); }
+    .toc a:hover { color: var(--accent); }
+
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; gap: 16px; }
+      .toc { position: static; max-height: none; border: 1px solid var(--border); border-radius: 6px; padding: 16px; background: var(--bg-alt); }
+    }
+
+    article h1 { margin: 0 0 8px; font-size: 2rem; line-height: 1.25; }
+    article > p.lead { margin: 0 0 8px; color: var(--muted); font-size: 1.05rem; }
+
+    section { padding: 28px 0; border-bottom: 1px solid var(--border); }
+    section:last-child { border-bottom: none; }
+
+    h2 { margin: 0 0 16px; font-size: 1.5rem; scroll-margin-top: 16px; }
+    h3 { margin: 24px 0 8px; font-size: 1.1rem; scroll-margin-top: 16px; }
+
+    p, li { font-size: 0.975rem; }
+    ol, ul { padding-left: 22px; }
+    li { margin-bottom: 4px; }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.925rem; }
+    th, td { text-align: left; padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
+    th { background-color: var(--bg-alt); font-weight: 600; }
+    .table-wrap { overflow-x: auto; }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 0.875em;
+      background-color: var(--bg-alt);
+      padding: 2px 5px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      overflow-wrap: anywhere;
+    }
+
+    pre {
+      background-color: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-size: 0.875rem;
+      line-height: 1.5;
+    }
+
+    pre code { background: none; border: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+
+    .ui { font-weight: 600; }
+
+    .notice {
+      background-color: var(--bg-alt);
+      border-left: 4px solid var(--accent);
+      padding: 12px 16px;
+      margin: 16px 0;
+      font-size: 0.925rem;
+    }
+
+    .notice.warn { border-left-color: var(--warn); }
+
+    footer {
+      padding: 28px 0;
+      font-size: 0.9rem;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="container nav">
+      <a href="index.html" class="brand">VNSync</a>
+      <nav class="nav-links">
+        <a href="index.html#download">Download</a>
+        <a href="index.html#features">Features</a>
+        <a href="docs.html">Docs</a>
+        <a href="https://github.com/NYT92/vnsync" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container layout">
+    <nav class="toc" aria-label="Table of contents">
+      <ol>
+        <li><a href="#quick-start">Quick start</a></li>
+        <li><a href="#concepts">How VNSync works</a></li>
+        <li><a href="#add-game">Adding a game</a>
+          <ol>
+            <li><a href="#path-tokens">Save path tokens</a></li>
+          </ol>
+        </li>
+        <li><a href="#library">Game library</a></li>
+        <li><a href="#game-detail">Game page &amp; snapshots</a></li>
+        <li><a href="#sync">Syncing &amp; conflicts</a></li>
+        <li><a href="#backends">Storage backends</a></li>
+        <li><a href="#server">Self-hosted server</a>
+          <ol>
+            <li><a href="#server-install">Install &amp; run</a></li>
+            <li><a href="#server-config">Configuration</a></li>
+            <li><a href="#server-https">HTTPS &amp; exposure</a></li>
+            <li><a href="#server-api">HTTP API</a></li>
+          </ol>
+        </li>
+        <li><a href="#settings">Settings reference</a></li>
+        <li><a href="#moving">New PC &amp; Steam Deck</a></li>
+        <li><a href="#updates">Updates</a></li>
+        <li><a href="#troubleshooting">Troubleshooting</a></li>
+      </ol>
+    </nav>
+
+    <article>
+      <h1>VNSync Documentation</h1>
+      <p class="lead">Everything you need to keep Visual Novel and RPG saves in sync across Windows, macOS, Linux, and Steam Deck.</p>
+
+      <div class="notice warn">
+        <strong>Development status:</strong> VNSync is still in development. Keep an independent backup of saves you cannot afford to lose.
+      </div>
+
+      <section id="quick-start">
+        <h2>Quick start</h2>
+        <ol>
+          <li><a href="index.html#download">Download</a> and install VNSync on every device you play on.</li>
+          <li>Open <span class="ui">Settings</span> and pick a storage backend (S3, WebDAV, a shared folder, or your own <a href="#server">VNSync Server</a>). Click <span class="ui">Test Connection</span>, then <span class="ui">Save Backend</span>.</li>
+          <li>Set a <span class="ui">Device Name</span> (for example <code>Desktop-Win11</code> or <code>Steam-Deck</code>) so you can tell snapshots apart.</li>
+          <li>Click <span class="ui">Add Game</span>, pick the game executable, and click <span class="ui">Detect</span> to find the save folder.</li>
+          <li>Open the game and click <span class="ui">Sync Saves</span>. Repeat on the other device and VNSync downloads the save.</li>
+        </ol>
+        <p>Use the same storage backend settings on every device. Each device must point to the same bucket, WebDAV folder, shared folder, or server.</p>
+      </section>
+
+      <section id="concepts">
+        <h2>How VNSync works</h2>
+        <ul>
+          <li><strong>Snapshot:</strong> VNSync packs a game's save folder into a <code>.tar.zst</code> archive. A BLAKE3 hash of the content identifies it, so identical saves give the same hash.</li>
+          <li><strong>Local vault:</strong> snapshots are kept on your device. You can restore any of them from the game page.</li>
+          <li><strong>Head:</strong> the newest snapshot for a game. Each snapshot remembers its parent, so VNSync knows which device's save came first.</li>
+          <li><strong>Remote:</strong> your storage backend holds <code>games/&lt;game id&gt;/head.json</code>, the snapshot archives in <code>games/&lt;game id&gt;/snapshots/</code>, and the library list in <code>library/catalog.json</code>.</li>
+          <li><strong>Portable path rules:</strong> save locations are stored with tokens like <code>&lt;win_appdata&gt;</code>, so the same rule works on every OS.</li>
+        </ul>
+      </section>
+
+      <section id="add-game">
+        <h2>Adding a game</h2>
+        <p>Click <span class="ui">Add Game</span> on the library page.</p>
+        <ol>
+          <li><strong>VNDB search (optional).</strong> Type the title in <span class="ui">Search Visual Novel Title</span> and click <span class="ui">Search</span>. Select a result to fill the title, original title, developer, release date, cover image, and synopsis.</li>
+          <li><strong>Game Executable.</strong> Click <span class="ui">Browse</span> and select the game's <code>.exe</code> or binary. Click <span class="ui">Detect</span>. VNSync fingerprints the engine (Ren'Py, RPG Maker MV/MZ/VX Ace/VX/XP, Kirikiri/KAG, Unity) and fills the save path rule.</li>
+          <li><strong>Wine / Proton Prefix (Linux / Steam Deck only).</strong> If the game runs through Proton, enter its prefix, for example <code>/home/deck/.local/share/Steam/steamapps/compatdata/12345</code>. VNSync accepts the folder with or without the trailing <code>/pfx</code>.</li>
+          <li><strong>Portable Save Path Rules.</strong> Check the detected rule. If detection fails:
+            <ul>
+              <li>Select a preset from the save location database (for example Nitroplus or Key titles). <span class="ui">Load Custom JSON</span> lets you use your own preset file; <span class="ui">Use Default</span> switches back.</li>
+              <li>Or type a rule and click <span class="ui">Add Rule</span>. <span class="ui">Pick File</span> / <span class="ui">Pick Folder</span> converts a real path into a portable rule for you.</li>
+            </ul>
+          </li>
+          <li>Check the metadata fields (title, developer, <span class="ui">Play Status</span>, cover URL, notes) and click <span class="ui">Save to Library</span>.</li>
+        </ol>
+
+        <h3 id="path-tokens">Save path tokens</h3>
+        <p>Rules use tokens so one rule works on every OS. VNSync resolves them as follows:</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Token</th><th>Windows</th><th>macOS</th><th>Linux</th><th>Proton prefix set</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>&lt;game_dir&gt;</code></td><td colspan="4">Folder that contains the game executable</td></tr>
+              <tr><td><code>&lt;win_appdata&gt;</code></td><td><code>%APPDATA%</code> (Roaming)</td><td><code>~/Library/Application Support</code></td><td><code>~/.local/share</code></td><td><code>…/drive_c/users/steamuser/AppData/Roaming</code></td></tr>
+              <tr><td><code>&lt;win_locallow&gt;</code></td><td><code>%USERPROFILE%\AppData\LocalLow</code></td><td><code>~/Library/Application Support</code></td><td><code>~/.config/unity3d</code></td><td><code>…/steamuser/AppData/LocalLow</code></td></tr>
+              <tr><td><code>&lt;win_documents&gt;</code></td><td>Documents folder</td><td>Documents folder</td><td>Documents folder</td><td><code>…/steamuser/Documents</code></td></tr>
+              <tr><td><code>&lt;game_title&gt;</code></td><td colspan="4">The game's title, inside a path</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Ren'Py exception: <code>&lt;win_appdata&gt;/RenPy/…</code> maps to <code>~/Library/RenPy/…</code> on macOS and <code>~/.renpy/…</code> on Linux.</p>
+        <p>Examples: <code>&lt;game_dir&gt;/savedata</code>, <code>&lt;game_dir&gt;/*.sav</code>, <code>&lt;win_appdata&gt;/RenPy/MyGame-1234567</code>.</p>
+      </section>
+
+      <section id="library">
+        <h2>Game library</h2>
+        <p>The home page lists every game with its engine, sync status, and play status. Use the filter box to search by title, developer, or engine.</p>
+        <ul>
+          <li><span class="ui">Play</span> starts the game. With the auto-sync rules on, VNSync pulls newer saves first and snapshots and pushes after the game closes. Playtime is recorded.</li>
+          <li><span class="ui">Locate Folder</span> opens the game folder.</li>
+          <li><span class="ui">Sync All</span> syncs every game in one step.</li>
+          <li>Right-click a game for quick actions.</li>
+        </ul>
+        <p>Sync status values:</p>
+        <ul>
+          <li><strong>Local Only:</strong> the game was never synced.</li>
+          <li><strong>Synced:</strong> local and remote heads match.</li>
+          <li><strong>Conflict:</strong> two devices changed the save separately. See <a href="#conflicts">conflicts</a>.</li>
+        </ul>
+
+        <h3>Library Backup menu</h3>
+        <ul>
+          <li><span class="ui">Backup Library to Cloud</span> uploads your game list to <code>library/catalog.json</code> in the active backend.</li>
+          <li><span class="ui">Restore Library from Cloud</span> downloads that list and merges it into this device. Use it on a new device instead of adding every game again.</li>
+          <li><span class="ui">Export / Import Library Backup (.json)</span> does the same with a local file.</li>
+          <li><span class="ui">Auto-Fix Wrong User Paths</span> repairs executable paths that point to another user's home folder. See <a href="#moving">New PC &amp; Steam Deck</a>.</li>
+        </ul>
+        <p>The library backup holds game entries and path rules only. Save files sync per game.</p>
+      </section>
+
+      <section id="game-detail">
+        <h2>Game page &amp; snapshots</h2>
+        <p>Click a game to open its page.</p>
+        <ul>
+          <li><span class="ui">Sync Saves</span> syncs this game with the remote.</li>
+          <li><span class="ui">Snapshot</span> saves the current save folder to the local vault. Type a checkpoint label first (for example <code>Choice A</code>) to find it later. Use this before a big choice to keep each route.</li>
+          <li>The snapshot list shows each snapshot's device, time, and label. <code>HEAD</code> marks the current one. <span class="ui">Restore</span> writes that snapshot back into the save folder.</li>
+          <li><span class="ui">Edit Paths</span> changes the executable, save path rule, or Proton prefix. A <span class="ui">Missing on this user/PC</span> badge means the executable path is wrong on this device: click <span class="ui">Select .exe</span> or <span class="ui">Select Folder</span>.</li>
+          <li><span class="ui">Edit Game</span> opens the full editor: VNDB refresh, title, status, completion percentage, cover, notes, and save rules.</li>
+          <li>Removing a game deletes its VNSync entry and local vault history. Your real save files on disk stay.</li>
+        </ul>
+        <div class="notice">With <span class="ui">Pre-Restore Safety Vault Backup</span> on (default), VNSync takes a local snapshot before any restore or pull overwrites your files. You can undo a bad restore from the snapshot list.</div>
+      </section>
+
+      <section id="sync">
+        <h2>Syncing &amp; conflicts</h2>
+        <p>When you sync, VNSync compares the local head with the remote head:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Situation</th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td>No remote save yet</td><td>Uploads the local snapshot</td></tr>
+              <tr><td>No local save yet</td><td>Downloads the remote snapshot</td></tr>
+              <tr><td>Same snapshot on both sides</td><td>"Saves are already in sync"</td></tr>
+              <tr><td>Local save is newer and continues from the remote one</td><td>Fast-forward push</td></tr>
+              <tr><td>Remote save is newer and continues from the local one</td><td>Fast-forward pull</td></tr>
+              <tr><td>Both sides changed since their last common snapshot</td><td>Conflict</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="conflicts">Resolving a conflict</h3>
+        <p>The game page shows <span class="ui">Save Lineage Conflict Detected</span> with the local and remote state side by side. Choose one:</p>
+        <ul>
+          <li><span class="ui">Keep Local &amp; Push to Cloud</span> replaces the remote save with this device's save.</li>
+          <li><span class="ui">Pull Cloud &amp; Restore Locally</span> replaces this device's save with the remote save. A safety snapshot is taken first.</li>
+        </ul>
+        <p>The losing side is not lost: the local one stays in the local vault, and the server keeps older snapshots in its history.</p>
+      </section>
+
+      <section id="backends">
+        <h2>Storage backends</h2>
+        <p>Configure the backend in <span class="ui">Settings → Cloud &amp; Storage Backend</span>. Set <span class="ui">Storage Backend Type</span>, fill the fields, click <span class="ui">Test Connection</span>, then <span class="ui">Save Backend</span>.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Type</th><th>Fields</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>S3-Compatible</td>
+                <td>Endpoint URL, Bucket Name, Region, Root Folder Prefix, Access Key ID, Secret Access Key</td>
+                <td>Cloudflare R2, AWS S3, MinIO, Backblaze B2. Leave Endpoint blank for AWS. Use region <code>auto</code> for R2.</td>
+              </tr>
+              <tr>
+                <td>WebDAV</td>
+                <td>WebDAV Endpoint URL, Username, Password / App Password</td>
+                <td>Nextcloud, ownCloud, Synology, Koofr. Nextcloud URL: <code>https://cloud.example.com/remote.php/dav/files/username/</code>. Use an app password.</td>
+              </tr>
+              <tr>
+                <td>Local / Shared Folder</td>
+                <td>Local / Network Sync Folder</td>
+                <td>Any folder another tool syncs: Syncthing, Google Drive, Dropbox, OneDrive, or an SMB share.</td>
+              </tr>
+              <tr>
+                <td>VNSync Server</td>
+                <td>Server URL, Token</td>
+                <td>Your own server. See <a href="#server">Self-hosted server</a>.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="notice">Only the VNSync Server checks that nobody else changed the remote save during your upload. S3, WebDAV, and folder backends overwrite <code>head.json</code> without that check. If two devices sync the same game at the same moment, one change can be overwritten. The VNSync Server rejects the second upload instead.</div>
+      </section>
+
+      <section id="server">
+        <h2>Self-hosted server</h2>
+        <p>The <code>server/</code> folder in the repository is a small sync server for a home server, NAS, or VPS. Use it instead of S3 or WebDAV when you want to own the storage. It:</p>
+        <ul>
+          <li>stores saves as files in one data folder,</li>
+          <li>rejects a push when another device already moved the save forward,</li>
+          <li>keeps the last <code>KEEP_SNAPSHOTS</code> snapshots per game and deletes older archives,</li>
+          <li>protects every request with one shared token.</li>
+        </ul>
+
+        <h3 id="server-install">Install &amp; run</h3>
+        <p>Requires <strong>Node.js v24.2 or newer</strong>. The server runs the TypeScript source directly, without a build step.</p>
+<pre><code>git clone https://github.com/NYT92/vnsync.git
+cd vnsync/server
+npm install
+cp .env.example .env    # then set SECRET
+npm start</code></pre>
+        <p>Make a strong secret, for example with:</p>
+<pre><code>node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"</code></pre>
+        <p>Then in the app on every device:</p>
+        <ol>
+          <li>Open <span class="ui">Settings → Cloud &amp; Storage Backend</span>.</li>
+          <li>Set <span class="ui">Storage Backend Type</span> to <span class="ui">VNSync Server (Self-Hosted)</span>.</li>
+          <li>Enter the <span class="ui">Server URL</span>, for example <code>http://192.168.1.10:3000</code>.</li>
+          <li>Enter the <code>SECRET</code> value as <span class="ui">Token</span>.</li>
+          <li>Click <span class="ui">Test Connection</span>, then <span class="ui">Save Backend</span>.</li>
+        </ol>
+        <p>Other scripts: <code>npm run dev</code> restarts on file changes, <code>npm test</code> runs the server tests.</p>
+
+        <h3 id="server-config">Configuration</h3>
+        <p>Set these in <code>server/.env</code>:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Variable</th><th>Default</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>SECRET</code></td><td>(required)</td><td>Token the app sends as <code>Authorization: Bearer &lt;SECRET&gt;</code>. The server does not start without it.</td></tr>
+              <tr><td><code>PORT</code></td><td><code>3000</code></td><td>HTTP port.</td></tr>
+              <tr><td><code>DATA_DIR</code></td><td><code>./data</code></td><td>Folder for all saves. Back up this folder.</td></tr>
+              <tr><td><code>KEEP_SNAPSHOTS</code></td><td><code>20</code></td><td>Snapshots kept per game. Older archives are deleted on push.</td></tr>
+              <tr><td><code>MAX_UPLOAD_MB</code></td><td><code>512</code></td><td>Largest upload accepted. Bigger uploads get HTTP 413.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Data layout inside <code>DATA_DIR</code>:</p>
+<pre><code>games/&lt;game id&gt;/head.json               current head
+games/&lt;game id&gt;/history.jsonl           retained heads, oldest first
+games/&lt;game id&gt;/snapshots/&lt;id&gt;.tar.zst  save archives
+library/catalog.json                    library backup</code></pre>
+
+        <h3 id="server-https">HTTPS &amp; exposure</h3>
+        <div class="notice warn">The server speaks plain HTTP. The token travels in a request header, so anyone on the network path can read it. On your home network this is usually fine. Before you expose the server to the internet, put it behind an HTTPS reverse proxy and use the <code>https://</code> URL in the app.</div>
+        <p>Example with Caddy (gets a certificate automatically):</p>
+<pre><code>vnsync.example.com {
+    reverse_proxy 127.0.0.1:3000
+}</code></pre>
+        <p>If you use nginx, raise <code>client_max_body_size</code> to at least your <code>MAX_UPLOAD_MB</code>, or large saves fail.</p>
+        <p>Alternatives with no open port: a VPN such as Tailscale or WireGuard between your devices.</p>
+
+        <h3 id="server-api">HTTP API</h3>
+        <p>Every request needs <code>Authorization: Bearer &lt;SECRET&gt;</code>. Wrong token returns 401.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Request</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>GET /api/ping</code></td><td>Health check. Returns <code>{"ok":true}</code>.</td></tr>
+              <tr><td><code>GET /api/blob/&lt;key&gt;</code></td><td>Read a stored file. 404 when missing.</td></tr>
+              <tr><td><code>PUT /api/blob/&lt;key&gt;</code></td><td>Write a file (atomic). For <code>games/&lt;id&gt;/head.json</code>, send <code>If-Match: &lt;expected head id&gt;</code> or <code>If-None-Match: *</code>. The server returns 412 when the current head is different.</td></tr>
+              <tr><td><code>GET /api/games/&lt;id&gt;/history</code></td><td>Retained heads for a game, newest first.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Quick check from a terminal:</p>
+<pre><code>curl -H "Authorization: Bearer $SECRET" http://192.168.1.10:3000/api/ping</code></pre>
+      </section>
+
+      <section id="settings">
+        <h2>Settings reference</h2>
+        <h3>General</h3>
+        <ul>
+          <li><span class="ui">Device Name</span>: shown on every snapshot.</li>
+          <li><span class="ui">Max Local Vault Snapshots</span>: snapshots kept per game on this device.</li>
+          <li><span class="ui">Default Game Library Root Folder</span>: where your games live on this device. VNSync uses it to find games whose path came from another PC. <span class="ui">Remap User Paths</span> applies it to existing games.</li>
+        </ul>
+        <h3>Automatic Sync Rules</h3>
+        <ul>
+          <li><span class="ui">Pull latest saves on Game Launch</span>: fast-forward pull before the game starts.</li>
+          <li><span class="ui">Snapshot &amp; Push on Game Exit</span>: wait for the game to close, snapshot, and upload.</li>
+          <li><span class="ui">Pre-Restore Safety Vault Backup</span>: local snapshot before any overwrite. Keep this on.</li>
+        </ul>
+        <h3>System Tray &amp; Window Behavior</h3>
+        <ul>
+          <li><span class="ui">Hide to System Tray on Close</span>: closing the window keeps VNSync running.</li>
+          <li><span class="ui">Ask Before Closing</span>: ask each time whether to minimize to tray or exit.</li>
+          <li><span class="ui">Hide to System Tray on Minimize</span>: minimize goes to the tray, not the taskbar.</li>
+        </ul>
+        <p>Click <span class="ui">Save Preferences</span> after changes.</p>
+      </section>
+
+      <section id="moving">
+        <h2>New PC &amp; Steam Deck</h2>
+        <ol>
+          <li>Install VNSync and configure the same storage backend.</li>
+          <li>Set a new <span class="ui">Device Name</span> and the <span class="ui">Default Game Library Root Folder</span> for this device.</li>
+          <li>Run <span class="ui">Library Backup → Restore Library from Cloud</span>.</li>
+          <li>Run <span class="ui">Auto-Fix Wrong User Paths</span>. Fix any game that still shows <span class="ui">Missing on this user/PC</span> with <span class="ui">Edit Paths</span>.</li>
+          <li>On Steam Deck / Linux with Proton, set each game's <span class="ui">Wine / Proton Prefix</span>. The prefix is in <code>~/.local/share/Steam/steamapps/compatdata/&lt;app id&gt;</code>. For non-Steam games the app id is a large generated number; check the newest folder there after first launch.</li>
+          <li>Click <span class="ui">Sync All</span>.</li>
+        </ol>
+      </section>
+
+      <section id="updates">
+        <h2>Updates</h2>
+        <p>Open <span class="ui">About</span> and click <span class="ui">Check for Updates</span>. VNSync compares your version with the latest GitHub release. New installers are on the <a href="https://github.com/NYT92/vnsync/releases" target="_blank" rel="noopener">releases page</a>.</p>
+        <p>To update the server: <code>git pull</code>, then <code>npm install</code> in <code>server/</code>, then restart it. Your <code>DATA_DIR</code> is not touched.</p>
+      </section>
+
+      <section id="troubleshooting">
+        <h2>Troubleshooting</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Problem</th><th>Fix</th></tr></thead>
+            <tbody>
+              <tr><td>"Server rejected the token"</td><td>The Token in Settings does not match <code>SECRET</code> in <code>server/.env</code>. Copy it again; check for spaces.</td></tr>
+              <tr><td>"Remote saves changed during sync. Sync again."</td><td>Another device pushed while you synced. Click <span class="ui">Sync Saves</span> again; VNSync then pulls or shows a conflict.</td></tr>
+              <tr><td>"Server returned HTTP 413"</td><td>The save archive is bigger than <code>MAX_UPLOAD_MB</code>, or your reverse proxy body limit. Raise the limit.</td></tr>
+              <tr><td>Test Connection fails for the server</td><td>Check that the server runs, the port is open in the firewall, and the URL has <code>http://</code> or <code>https://</code> and the port.</td></tr>
+              <tr><td>Server exits with "SECRET is empty"</td><td>Set <code>SECRET</code> in <code>server/.env</code>.</td></tr>
+              <tr><td>"No local or remote save files found yet"</td><td>The save path rule points to an empty or wrong folder. Start the game, save once, and check the rule with <span class="ui">Edit Paths</span>.</td></tr>
+              <tr><td>Executable shows Missing on this user/PC</td><td>Run <span class="ui">Auto-Fix Wrong User Paths</span>, or select the executable in <span class="ui">Edit Paths</span>.</td></tr>
+              <tr><td>Steam Deck saves not found</td><td>Set the game's Wine / Proton Prefix. Without it, Windows tokens resolve to Linux paths.</td></tr>
+              <tr><td>"No remote library catalog backup found"</td><td>No device ran <span class="ui">Backup Library to Cloud</span> on this backend yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Still stuck? <a href="https://github.com/NYT92/vnsync/issues" target="_blank" rel="noopener">Open an issue</a> with your OS, engine, and the exact error message.</p>
+      </section>
+    </article>
+  </div>
+
+  <footer class="container">
+    <div>VNSync &middot; Released under the GPL-3.0 License</div>
+    <div>
+      <a href="https://github.com/NYT92/vnsync" target="_blank" rel="noopener">GitHub Repository</a> &middot;
+      <a href="https://github.com/NYT92/vnsync/issues" target="_blank" rel="noopener">Report an Issue</a>
+    </div>
+  </footer>
+
+</body>
+</html>

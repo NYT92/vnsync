@@ -56,7 +56,8 @@ const activeProfile = ref<StorageProfile>({
 const providerOptions = [
   { label: 'S3-Compatible (Cloudflare R2, AWS S3, MinIO, Backblaze B2)', value: 's3' },
   { label: 'WebDAV (Nextcloud, ownCloud, Synology, Self-Hosted)', value: 'webdav' },
-  { label: 'Local / Shared Folder (Syncthing, Google Drive, NAS)', value: 'local_fs' }
+  { label: 'Local / Shared Folder (Syncthing, Google Drive, NAS)', value: 'local_fs' },
+  { label: 'VNSync Server (Self-Hosted)', value: 'vnsync_server' }
 ]
 
 const isSaving = ref(false)
@@ -333,6 +334,33 @@ const handleSaveAll = async () => {
                   </UFormField>
 
                   <UFormField label="Password / App Password">
+                    <UInput
+                      v-model="activeProfile.secretKey"
+                      type="password"
+                      size="lg"
+                      class="w-full"
+                    />
+                  </UFormField>
+                </div>
+
+                <!-- VNSync Server Config -->
+                <div
+                  v-if="activeProfile.providerType === 'vnsync_server'"
+                  class="grid grid-cols-1 lg:grid-cols-2 gap-4"
+                >
+                  <UFormField
+                    label="Server URL"
+                    help="Address of your vnsync-server. Use HTTPS outside your home network."
+                  >
+                    <UInput
+                      v-model="activeProfile.endpoint"
+                      placeholder="http://192.168.1.10:3000"
+                      size="lg"
+                      class="w-full"
+                    />
+                  </UFormField>
+
+                  <UFormField label="Token" help="The SECRET value from the server's .env file.">
                     <UInput
                       v-model="activeProfile.secretKey"
                       type="password"

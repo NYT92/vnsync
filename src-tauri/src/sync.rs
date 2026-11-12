@@ -51,7 +51,121 @@ pub struct SyncOutcome {
     pub remote_head: Option<RemoteGameHead>,
 }
 
-pub fn build_operator(profile: &StorageProfile) -> Result<Operator, String> {
+/// Precondition for replacing a game's remote `head.json`.
+pub enum HeadExpect {
+    /// No remote head may exist yet.
+    Absent,
+    /// The remote head must still be this snapshot id.
+    Is(String),
+    /// Overwrite unconditionally (explicit conflict resolution).
+    Any,
+}
+
+pub enum Remote {
+    Dal(Operator),
+    /// Self-hosted vnsync-server (`server/`), which enforces `HeadExpect` atomically.
+    Server {
+        base_url: String,
+        token: String,
+        client: reqwest::Client,
+    },
+}
+
+impl Remote {
+    fn server_request(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+    ) -> Result<reqwest::RequestBuilder, String> {
+        match self {
+            Remote::Server {
+                base_url,
+                token,
+                client,
+            } => Ok(client
+                .request(method, format!("{}/api/{}", base_url, path))
+                .bearer_auth(token)),
+            Remote::Dal(_) => Err("Not a VNSync server profile".to_string()),
+        }
+    }
+
+    async fn send(req: reqwest::RequestBuilder) -> Result<reqwest::Response, String> {
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        match resp.status().as_u16() {
+            200..=299 => Ok(resp),
+            401 => Err("Server rejected the token".to_string()),
+            412 => Err("Remote saves changed during sync. Sync again.".to_string()),
+            code => Err(format!("Server returned HTTP {}", code)),
+        }
+    }
+
+    pub async fn read(&self, path: &str) -> Result<Vec<u8>, String> {
+        match self {
+            Remote::Dal(op) => op
+                .read(path)
+                .await
+                .map(|b| b.to_vec())
+                .map_err(|e| e.to_string()),
+            Remote::Server { .. } => {
+                let req = self.server_request(reqwest::Method::GET, &format!("blob/{}", path))?;
+                let resp = Self::send(req).await?;
+                resp.bytes()
+                    .await
+                    .map(|b| b.to_vec())
+                    .map_err(|e| e.to_string())
+            }
+        }
+    }
+
+    pub async fn write(&self, path: &str, bytes: Vec<u8>) -> Result<(), String> {
+        self.write_head(path, bytes, HeadExpect::Any).await
+    }
+
+    /// Writes `path`; a vnsync-server rejects the write when `expected` no longer holds.
+    /// OpenDAL backends cannot check it and always overwrite.
+    pub async fn write_head(
+        &self,
+        path: &str,
+        bytes: Vec<u8>,
+        expected: HeadExpect,
+    ) -> Result<(), String> {
+        match self {
+            Remote::Dal(op) => op
+                .write(path, bytes)
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string()),
+            Remote::Server { .. } => {
+                let req = self
+                    .server_request(reqwest::Method::PUT, &format!("blob/{}", path))?
+                    .body(bytes);
+                let req = match expected {
+                    HeadExpect::Absent => req.header("If-None-Match", "*"),
+                    HeadExpect::Is(id) => req.header("If-Match", id),
+                    HeadExpect::Any => req,
+                };
+                Self::send(req).await.map(|_| ())
+            }
+        }
+    }
+}
+
+pub fn build_remote(profile: &StorageProfile) -> Result<Remote, String> {
+    if profile.provider_type == "vnsync_server" {
+        let base_url = profile.endpoint.trim().trim_end_matches('/').to_string();
+        if base_url.is_empty() {
+            return Err("VNSync server URL is empty".to_string());
+        }
+        return Ok(Remote::Server {
+            base_url,
+            token: profile.secret_key.clone(),
+            client: reqwest::Client::new(),
+        });
+    }
+    build_operator(profile).map(Remote::Dal)
+}
+
+fn build_operator(profile: &StorageProfile) -> Result<Operator, String> {
     match profile.provider_type.as_str() {
         "s3" => {
             let mut builder = services::S3::default()
@@ -105,7 +219,18 @@ pub fn build_operator(profile: &StorageProfile) -> Result<Operator, String> {
 }
 
 pub async fn test_storage_connection(profile: &StorageProfile) -> Result<String, String> {
-    let op = build_operator(profile)?;
+    let remote = build_remote(profile)?;
+    let op = match &remote {
+        Remote::Dal(op) => op,
+        Remote::Server { .. } => {
+            let req = remote.server_request(reqwest::Method::GET, "ping")?;
+            Remote::send(req).await?;
+            return Ok(format!(
+                "Connected to {} ({})",
+                profile.name, profile.provider_type
+            ));
+        }
+    };
     let probe_path = "vnsync_healthcheck.txt";
     op.write(probe_path, "ok")
         .await
@@ -142,7 +267,7 @@ pub async fn sync_game(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "No active storage profile configured in Settings".to_string())?;
 
-    let op = build_operator(&profile)?;
+    let op = build_remote(&profile)?;
 
     // Check if local save files changed since last local snapshot
     let (current_tree_hash, current_files) = compute_current_save_state(&game)?;
@@ -172,14 +297,14 @@ pub async fn sync_game(
 
     let head_path = format!("games/{}/head.json", game.id);
     let remote_head: Option<RemoteGameHead> = match op.read(&head_path).await {
-        Ok(bytes) => serde_json::from_slice(&bytes.to_vec()).ok(),
+        Ok(bytes) => serde_json::from_slice(&bytes).ok(),
         Err(_) => None,
     };
 
     // Explicit resolution overrides ("push" or "pull")
     if force_direction == Some("push") {
         let snap = local_head.ok_or_else(|| "No local saves found to push".to_string())?;
-        let head = push_snapshot_to_remote(&op, &game, &snap).await?;
+        let head = push_snapshot_to_remote(&op, &game, &snap, HeadExpect::Any).await?;
         game.sync_status = "Synced".to_string();
         db.upsert_game(&game).map_err(|e| e.to_string())?;
         return Ok(SyncOutcome {
@@ -210,7 +335,7 @@ pub async fn sync_game(
             remote_head: None,
         }),
         (Some(l_snap), None) => {
-            let head = push_snapshot_to_remote(&op, &game, l_snap).await?;
+            let head = push_snapshot_to_remote(&op, &game, l_snap, HeadExpect::Absent).await?;
             game.sync_status = "Synced".to_string();
             db.upsert_game(&game).map_err(|e| e.to_string())?;
             Ok(SyncOutcome {
@@ -243,7 +368,8 @@ pub async fn sync_game(
 
             // Fast-forward push: local snapshot descends directly from remote head
             if l_snap.parent_id.as_deref() == Some(r_head.head_snapshot_id.as_str()) {
-                let head = push_snapshot_to_remote(&op, &game, l_snap).await?;
+                let expected = HeadExpect::Is(r_head.head_snapshot_id.clone());
+                let head = push_snapshot_to_remote(&op, &game, l_snap, expected).await?;
                 game.sync_status = "Synced".to_string();
                 db.upsert_game(&game).map_err(|e| e.to_string())?;
                 return Ok(SyncOutcome {
@@ -285,9 +411,10 @@ pub async fn sync_game(
 }
 
 async fn push_snapshot_to_remote(
-    op: &Operator,
+    op: &Remote,
     game: &Game,
     snap: &SnapshotRecord,
+    expected: HeadExpect,
 ) -> Result<RemoteGameHead, String> {
     let archive_bytes = fs::read(&snap.local_archive_path)
         .map_err(|e| format!("Failed reading local archive: {}", e))?;
@@ -310,7 +437,7 @@ async fn push_snapshot_to_remote(
     };
     let head_bytes = serde_json::to_vec_pretty(&head).map_err(|e| e.to_string())?;
     let head_path = format!("games/{}/head.json", game.id);
-    op.write(&head_path, head_bytes)
+    op.write_head(&head_path, head_bytes, expected)
         .await
         .map_err(|e| format!("Failed updating remote head.json: {}", e))?;
 
@@ -318,7 +445,7 @@ async fn push_snapshot_to_remote(
 }
 
 async fn pull_snapshot_from_remote(
-    op: &Operator,
+    op: &Remote,
     game: &mut Game,
     r_head: &RemoteGameHead,
     vault_dir: &Path,
@@ -336,7 +463,7 @@ async fn pull_snapshot_from_remote(
     let game_vault = vault_dir.join(&game.id);
     fs::create_dir_all(&game_vault).map_err(|e| e.to_string())?;
     let local_archive_path = game_vault.join(format!("{}.tar.zst", r_head.head_snapshot_id));
-    fs::write(&local_archive_path, data.to_vec()).map_err(|e| e.to_string())?;
+    fs::write(&local_archive_path, &data).map_err(|e| e.to_string())?;
 
     restore_snapshot_archive(game, &local_archive_path)?;
 
@@ -569,7 +696,7 @@ pub async fn sync_library_catalog(
         .get_active_storage_profile()
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "No active storage profile configured in Settings".to_string())?;
-    let op = build_operator(&profile)?;
+    let op = build_remote(&profile)?;
     let catalog_path = "library/catalog.json";
 
     let mut outcome = if direction != Some("push") {
@@ -614,26 +741,65 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_push_pull_and_conflict() {
-        let tmp = tempfile::tempdir().unwrap();
-        let remote_dir = tmp.path().join("remote_cloud");
-        let vault_a = tmp.path().join("vault_a");
-        let saves_a = tmp.path().join("saves_a");
-        fs::create_dir_all(&saves_a).unwrap();
-        fs::write(saves_a.join("save1.dat"), b"state_v1").unwrap();
-
-        let db_a = Database::open_in_memory().unwrap();
-        let profile = StorageProfile {
+        let remote_dir = tempfile::tempdir().unwrap();
+        sync_roundtrip(StorageProfile {
             id: "local-test".to_string(),
             name: "Local Test Cloud".to_string(),
             provider_type: "local_fs".to_string(),
-            endpoint: remote_dir.to_string_lossy().to_string(),
+            endpoint: remote_dir.path().to_string_lossy().to_string(),
             bucket: String::new(),
             region: String::new(),
             root_prefix: String::new(),
             access_key: String::new(),
             secret_key: String::new(),
             is_active: true,
+        })
+        .await;
+    }
+
+    /// Needs a running vnsync-server with an empty DATA_DIR:
+    /// `VNSYNC_TEST_SERVER=http://localhost:3000 VNSYNC_TEST_TOKEN=... cargo test -- --ignored`
+    #[tokio::test]
+    #[ignore]
+    async fn test_sync_against_vnsync_server() {
+        let profile = StorageProfile {
+            id: "server-test".to_string(),
+            name: "Test Server".to_string(),
+            provider_type: "vnsync_server".to_string(),
+            endpoint: std::env::var("VNSYNC_TEST_SERVER").unwrap(),
+            bucket: String::new(),
+            region: String::new(),
+            root_prefix: String::new(),
+            access_key: String::new(),
+            secret_key: std::env::var("VNSYNC_TEST_TOKEN").unwrap(),
+            is_active: true,
         };
+        test_storage_connection(&profile).await.unwrap();
+        sync_roundtrip(profile.clone()).await;
+
+        // The server must refuse a head write whose expected parent is stale.
+        let remote = build_remote(&profile).unwrap();
+        let stale = remote
+            .write_head(
+                "games/vn-1/head.json",
+                br#"{"headSnapshotId":"other"}"#.to_vec(),
+                HeadExpect::Absent,
+            )
+            .await;
+        assert_eq!(
+            stale.unwrap_err(),
+            "Remote saves changed during sync. Sync again."
+        );
+    }
+
+    async fn sync_roundtrip(profile: StorageProfile) {
+        let tmp = tempfile::tempdir().unwrap();
+        let vault_a = tmp.path().join("vault_a");
+        let saves_a = tmp.path().join("saves_a");
+        fs::create_dir_all(&saves_a).unwrap();
+        fs::write(saves_a.join("save1.dat"), b"state_v1").unwrap();
+
+        let db_a = Database::open_in_memory().unwrap();
         db_a.upsert_storage_profile(&profile).unwrap();
 
         let game_a = Game {
