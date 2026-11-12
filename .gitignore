@@ -14,7 +14,6 @@ frontend/wailsjs/
 frontend/package.json.md5
 *.tsbuildinfo
 FRAMELESS_README.md
-server/
 
 # Logs & Environment
 logs/
