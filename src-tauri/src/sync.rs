@@ -40,7 +40,13 @@ pub struct RemoteGameHead {
     pub updated_at: String,
     pub file_count: usize,
     pub total_bytes: u64,
+    /// Older snapshot ids in this head's lineage, newest first, capped at `MAX_LINEAGE`.
+    /// Lets a device several snapshots behind fast-forward instead of seeing a conflict.
+    #[serde(default)]
+    pub ancestors: Vec<String>,
 }
+
+const MAX_LINEAGE: usize = 200;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -148,6 +154,181 @@ impl Remote {
             }
         }
     }
+}
+
+impl Remote {
+    async fn read_head(&self, game_id: &str) -> Option<RemoteGameHead> {
+        let bytes = self
+            .read(&format!("games/{}/head.json", game_id))
+            .await
+            .ok()?;
+        serde_json::from_slice(&bytes).ok()
+    }
+
+    /// Cloud snapshots of a game, newest first.
+    pub async fn history(&self, game_id: &str) -> Result<Vec<RemoteGameHead>, String> {
+        let mut list: Vec<RemoteGameHead> = match self {
+            Remote::Server { .. } => {
+                let req = self
+                    .server_request(reqwest::Method::GET, &format!("games/{}/history", game_id))?;
+                let bytes = Self::send(req)
+                    .await?
+                    .bytes()
+                    .await
+                    .map_err(|e| e.to_string())?;
+                serde_json::from_slice(&bytes).map_err(|e| e.to_string())?
+            }
+            Remote::Dal(_) => match self.read(&dal_history_path(game_id)).await {
+                Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+                Err(_) => Vec::new(),
+            },
+        };
+        // Heads pushed before history was recorded still show up.
+        if let Some(head) = self.read_head(game_id).await {
+            if !list
+                .iter()
+                .any(|h| h.head_snapshot_id == head.head_snapshot_id)
+            {
+                list.insert(0, head);
+            }
+        }
+        Ok(list)
+    }
+
+    /// Deletes every cloud file of a game: head, history and snapshot archives.
+    pub async fn delete_game_data(&self, game_id: &str) -> Result<(), String> {
+        match self {
+            Remote::Dal(op) => op
+                .remove_all(&format!("games/{}/", game_id))
+                .await
+                .map_err(|e| e.to_string()),
+            Remote::Server { .. } => {
+                let req =
+                    self.server_request(reqwest::Method::DELETE, &format!("games/{}", game_id))?;
+                Self::send(req).await.map(|_| ())
+            }
+        }
+    }
+}
+
+/// OpenDAL backends keep their own history file; vnsync-server records history in `writeHead`.
+fn dal_history_path(game_id: &str) -> String {
+    format!("games/{}/history.json", game_id)
+}
+
+fn active_remote(db: &Database) -> Result<Remote, String> {
+    let profile = db
+        .get_active_storage_profile()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "No active storage profile configured in Settings".to_string())?;
+    build_remote(&profile)
+}
+
+pub async fn list_cloud_snapshots(
+    db: &Database,
+    game_id: &str,
+) -> Result<Vec<RemoteGameHead>, String> {
+    active_remote(db)?.history(game_id).await
+}
+
+pub async fn delete_cloud_game_data(db: &Database, game_id: &str) -> Result<(), String> {
+    active_remote(db)?.delete_game_data(game_id).await
+}
+
+/// Restores an archive over the game's current saves, then records the result as a new
+/// snapshot on top of `parent` (default: the current head). The next sync then pushes the
+/// restored state instead of pulling a newer head back over it.
+pub fn restore_as_new_snapshot(
+    db: &Database,
+    vault_dir: &Path,
+    game: &mut Game,
+    archive: &Path,
+    parent: Option<String>,
+    note: &str,
+) -> Result<(usize, SnapshotRecord), String> {
+    let settings = db.get_settings().map_err(|e| e.to_string())?;
+    if settings.backup_before_sync {
+        let (backup, _) = create_snapshot(
+            game,
+            vault_dir,
+            &settings.device_id,
+            &settings.device_name,
+            "Pre-restore safety backup",
+        )?;
+        db.insert_snapshot(&backup).map_err(|e| e.to_string())?;
+        game.head_snapshot_id = Some(backup.id);
+    }
+
+    let count = restore_snapshot_archive(game, archive)?;
+    if parent.is_some() {
+        game.head_snapshot_id = parent;
+    }
+    let (record, _) = create_snapshot(
+        game,
+        vault_dir,
+        &settings.device_id,
+        &settings.device_name,
+        note,
+    )?;
+    db.insert_snapshot(&record).map_err(|e| e.to_string())?;
+    game.head_snapshot_id = Some(record.id.clone());
+    db.upsert_game(game).map_err(|e| e.to_string())?;
+    Ok((count, record))
+}
+
+/// Downloads one cloud snapshot (if not already in the local vault) and restores it.
+pub async fn restore_cloud_snapshot(
+    db: &Database,
+    vault_dir: &Path,
+    game_id: &str,
+    snapshot_id: &str,
+) -> Result<(usize, SnapshotRecord), String> {
+    let mut game = db
+        .get_game(game_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Game not found".to_string())?;
+    let settings = db.get_settings().map_err(|e| e.to_string())?;
+    if heal_game_paths(&mut game, &settings.game_library_path).0 {
+        db.upsert_game(&game).map_err(|e| e.to_string())?;
+    }
+
+    let op = active_remote(db)?;
+    let history = op.history(game_id).await?;
+    let entry = history
+        .iter()
+        .find(|h| h.head_snapshot_id == snapshot_id)
+        .ok_or_else(|| "Snapshot not found in cloud storage".to_string())?;
+
+    let archive = vault_dir
+        .join(game_id)
+        .join(format!("{}.tar.zst", snapshot_id));
+    if !archive.is_file() {
+        let data = op
+            .read(&format!(
+                "games/{}/snapshots/{}.tar.zst",
+                game_id, snapshot_id
+            ))
+            .await
+            .map_err(|e| format!("Failed downloading cloud snapshot: {}", e))?;
+        fs::create_dir_all(vault_dir.join(game_id)).map_err(|e| e.to_string())?;
+        fs::write(&archive, &data).map_err(|e| e.to_string())?;
+    }
+
+    // Build on the current cloud head, so the next sync fast-forward pushes this restore.
+    let parent = op
+        .read_head(game_id)
+        .await
+        .map(|h| h.head_snapshot_id)
+        .or_else(|| game.head_snapshot_id.clone());
+    let when = chrono::DateTime::parse_from_rfc3339(&entry.updated_at)
+        .map(|d| {
+            d.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        })
+        .unwrap_or_else(|_| entry.updated_at.clone());
+    let note = format!("Restored cloud save from {} ({})", entry.device_name, when);
+    restore_as_new_snapshot(db, vault_dir, &mut game, &archive, parent, &note)
 }
 
 pub fn build_remote(profile: &StorageProfile) -> Result<Remote, String> {
@@ -262,6 +443,11 @@ pub async fn sync_game(
         .ok_or_else(|| "Game not found".to_string())?;
 
     let settings = db.get_settings().map_err(|e| e.to_string())?;
+    // Paths may still point at another PC (e.g. after a catalog import); fix them before
+    // reading or restoring saves, so a single-game sync works without a library sync first.
+    if heal_game_paths(&mut game, &settings.game_library_path).0 {
+        db.upsert_game(&game).map_err(|e| e.to_string())?;
+    }
     let profile = db
         .get_active_storage_profile()
         .map_err(|e| e.to_string())?
@@ -276,10 +462,12 @@ pub async fn sync_game(
         None => None,
     };
 
-    let local_dirty = match &local_head {
-        Some(snap) => snap.tree_hash != current_tree_hash,
-        None => !current_files.is_empty(),
-    };
+    // No save files found locally is never a new local change: checkpointing that empty
+    // state would push it over real saves from another device.
+    let local_dirty = !current_files.is_empty()
+        && local_head
+            .as_ref()
+            .is_none_or(|snap| snap.tree_hash != current_tree_hash);
 
     if local_dirty {
         let (snap_record, _) = create_snapshot(
@@ -304,7 +492,8 @@ pub async fn sync_game(
     // Explicit resolution overrides ("push" or "pull")
     if force_direction == Some("push") {
         let snap = local_head.ok_or_else(|| "No local saves found to push".to_string())?;
-        let head = push_snapshot_to_remote(&op, &game, &snap, HeadExpect::Any).await?;
+        let ancestors = local_lineage(db, snap.parent_id.clone(), None);
+        let head = push_snapshot_to_remote(&op, &game, &snap, ancestors, HeadExpect::Any).await?;
         game.sync_status = "Synced".to_string();
         db.upsert_game(&game).map_err(|e| e.to_string())?;
         return Ok(SyncOutcome {
@@ -335,7 +524,9 @@ pub async fn sync_game(
             remote_head: None,
         }),
         (Some(l_snap), None) => {
-            let head = push_snapshot_to_remote(&op, &game, l_snap, HeadExpect::Absent).await?;
+            let ancestors = local_lineage(db, l_snap.parent_id.clone(), None);
+            let head =
+                push_snapshot_to_remote(&op, &game, l_snap, ancestors, HeadExpect::Absent).await?;
             game.sync_status = "Synced".to_string();
             db.upsert_game(&game).map_err(|e| e.to_string())?;
             Ok(SyncOutcome {
@@ -366,10 +557,11 @@ pub async fn sync_game(
                 });
             }
 
-            // Fast-forward push: local snapshot descends directly from remote head
-            if l_snap.parent_id.as_deref() == Some(r_head.head_snapshot_id.as_str()) {
+            // Fast-forward push: remote head is somewhere in the local snapshot's lineage
+            let ancestors = local_lineage(db, l_snap.parent_id.clone(), Some(r_head));
+            if ancestors.contains(&r_head.head_snapshot_id) {
                 let expected = HeadExpect::Is(r_head.head_snapshot_id.clone());
-                let head = push_snapshot_to_remote(&op, &game, l_snap, expected).await?;
+                let head = push_snapshot_to_remote(&op, &game, l_snap, ancestors, expected).await?;
                 game.sync_status = "Synced".to_string();
                 db.upsert_game(&game).map_err(|e| e.to_string())?;
                 return Ok(SyncOutcome {
@@ -380,8 +572,10 @@ pub async fn sync_game(
                 });
             }
 
-            // Fast-forward pull: remote head descends directly from local head
-            if r_head.parent_snapshot_id.as_deref() == Some(l_snap.id.as_str()) {
+            // Fast-forward pull: local head is somewhere in the remote head's lineage
+            if r_head.parent_snapshot_id.as_deref() == Some(l_snap.id.as_str())
+                || r_head.ancestors.contains(&l_snap.id)
+            {
                 let snap = pull_snapshot_from_remote(&op, &mut game, r_head, vault_dir, db).await?;
                 return Ok(SyncOutcome {
                     action: "pulled".to_string(),
@@ -410,10 +604,40 @@ pub async fn sync_game(
     }
 }
 
+/// Walks local snapshot parents starting at `start`, newest first. On reaching `remote`'s head
+/// it appends that head's recorded ancestors, since older remote snapshots may not exist locally.
+fn local_lineage(
+    db: &Database,
+    start: Option<String>,
+    remote: Option<&RemoteGameHead>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = start;
+    while let Some(id) = cur {
+        if out.len() >= MAX_LINEAGE || out.contains(&id) {
+            break;
+        }
+        if let Some(r) = remote.filter(|r| r.head_snapshot_id == id) {
+            out.push(id);
+            out.extend(r.ancestors.iter().cloned());
+            break;
+        }
+        cur = db
+            .get_snapshot(&id)
+            .ok()
+            .flatten()
+            .and_then(|s| s.parent_id);
+        out.push(id);
+    }
+    out.truncate(MAX_LINEAGE);
+    out
+}
+
 async fn push_snapshot_to_remote(
     op: &Remote,
     game: &Game,
     snap: &SnapshotRecord,
+    ancestors: Vec<String>,
     expected: HeadExpect,
 ) -> Result<RemoteGameHead, String> {
     let archive_bytes = fs::read(&snap.local_archive_path)
@@ -434,12 +658,28 @@ async fn push_snapshot_to_remote(
         updated_at: snap.created_at.clone(),
         file_count: snap.file_count,
         total_bytes: snap.total_bytes,
+        ancestors,
     };
     let head_bytes = serde_json::to_vec_pretty(&head).map_err(|e| e.to_string())?;
     let head_path = format!("games/{}/head.json", game.id);
     op.write_head(&head_path, head_bytes, expected)
         .await
         .map_err(|e| format!("Failed updating remote head.json: {}", e))?;
+
+    if let Remote::Dal(_) = op {
+        // Best effort: the push already succeeded; history only feeds the cloud snapshot list.
+        // ponytail: read-modify-write, two devices pushing at once can drop an entry.
+        let path = dal_history_path(&game.id);
+        let mut history: Vec<RemoteGameHead> = match op.read(&path).await {
+            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+            Err(_) => Vec::new(),
+        };
+        history.retain(|h| h.head_snapshot_id != head.head_snapshot_id);
+        history.insert(0, head.clone());
+        if let Ok(bytes) = serde_json::to_vec(&history) {
+            let _ = op.write(&path, bytes).await;
+        }
+    }
 
     Ok(head)
 }
@@ -513,6 +753,27 @@ pub fn parse_library_catalog_json(raw: &str) -> Result<Vec<Game>, String> {
     Err("Invalid library backup JSON format".to_string())
 }
 
+/// Remaps one game's exe and save paths to this PC. Returns `(changed, exe_exists, remapped_count)`.
+fn heal_game_paths(g: &mut Game, game_library_path: &str) -> (bool, bool, usize) {
+    let mut remapped = 0usize;
+    let (resolved_exe, exists, exe_remapped) =
+        resolve_or_remap_exe_path(&g.exe_path, game_library_path);
+    if exe_remapped && resolved_exe != g.exe_path {
+        g.exe_path = resolved_exe;
+        remapped += 1;
+    }
+    let new_saves: Vec<String> = g
+        .save_paths
+        .iter()
+        .map(|p| to_canonical_path(p, &g.exe_path, &g.proton_prefix))
+        .collect();
+    if new_saves != g.save_paths {
+        g.save_paths = new_saves;
+        remapped += 1;
+    }
+    (remapped > 0, exists, remapped)
+}
+
 /// Checks all games in the library for paths belonging to a different OS user account
 /// or residing in `settings.game_library_path`, auto-remapping them when the target exists.
 pub fn heal_library_paths(db: &Database) -> Result<LibrarySyncOutcome, String> {
@@ -522,29 +783,11 @@ pub fn heal_library_paths(db: &Database) -> Result<LibrarySyncOutcome, String> {
     let mut missing_exe_count = 0usize;
 
     for mut g in games.iter().cloned() {
-        let mut changed = false;
-        let (resolved_exe, exists, exe_remapped) =
-            resolve_or_remap_exe_path(&g.exe_path, &settings.game_library_path);
-        if exe_remapped && resolved_exe != g.exe_path {
-            g.exe_path = resolved_exe;
-            remapped_paths += 1;
-            changed = true;
-        }
+        let (changed, exists, remapped) = heal_game_paths(&mut g, &settings.game_library_path);
+        remapped_paths += remapped;
         if !exists {
             missing_exe_count += 1;
         }
-
-        let new_saves: Vec<String> = g
-            .save_paths
-            .iter()
-            .map(|p| to_canonical_path(p, &g.exe_path, &g.proton_prefix))
-            .collect();
-        if new_saves != g.save_paths {
-            g.save_paths = new_saves;
-            remapped_paths += 1;
-            changed = true;
-        }
-
         if changed {
             db.upsert_game(&g).map_err(|e| e.to_string())?;
         }
@@ -843,5 +1086,49 @@ mod tests {
         let lib_res = sync_library_catalog(&db_b, Some("pull")).await.unwrap();
         assert_eq!(lib_res.added, 1);
         assert_eq!(db_b.list_games().unwrap().len(), 1);
+
+        // Device B: same game id, its own save dir, no saves yet -> pulls A's saves.
+        let vault_b = tmp.path().join("vault_b");
+        let saves_b = tmp.path().join("saves_b");
+        fs::create_dir_all(&saves_b).unwrap();
+        let mut game_b = game_a.clone();
+        game_b.exe_path = saves_b.join("Game.exe").to_string_lossy().to_string();
+        db_b.upsert_game(&game_b).unwrap();
+        let sync_b = || sync_game(&db_b, &vault_b, "vn-1", None);
+        let sync_a = || sync_game(&db_a, &vault_a, "vn-1", None);
+        assert_eq!(sync_b().await.unwrap().action, "pulled");
+        assert_eq!(fs::read(saves_b.join("save1.dat")).unwrap(), b"state_v1");
+
+        // A pushes several snapshots while B is idle; one B sync must fast-forward, not conflict.
+        for v in ["state_v2", "state_v3"] {
+            fs::write(saves_a.join("save1.dat"), v).unwrap();
+            assert_eq!(sync_a().await.unwrap().action, "pushed");
+        }
+        assert_eq!(sync_b().await.unwrap().action, "pulled");
+        assert_eq!(fs::read(saves_b.join("save1.dat")).unwrap(), b"state_v3");
+
+        // B plays and pushes; A fast-forwards.
+        fs::write(saves_b.join("save1.dat"), b"state_v4").unwrap();
+        assert_eq!(sync_b().await.unwrap().action, "pushed");
+        assert_eq!(sync_a().await.unwrap().action, "pulled");
+        assert_eq!(fs::read(saves_a.join("save1.dat")).unwrap(), b"state_v4");
+
+        // A restores an older cloud save; the next sync pushes it instead of pulling v4 back.
+        let history = list_cloud_snapshots(&db_a, "vn-1").await.unwrap();
+        assert_eq!(history.len(), 4);
+        let v2 = history[2].head_snapshot_id.clone();
+        restore_cloud_snapshot(&db_a, &vault_a, "vn-1", &v2)
+            .await
+            .unwrap();
+        assert_eq!(fs::read(saves_a.join("save1.dat")).unwrap(), b"state_v2");
+        assert_eq!(sync_a().await.unwrap().action, "pushed");
+        assert_eq!(sync_b().await.unwrap().action, "pulled");
+        assert_eq!(fs::read(saves_b.join("save1.dat")).unwrap(), b"state_v2");
+
+        delete_cloud_game_data(&db_a, "vn-1").await.unwrap();
+        assert!(list_cloud_snapshots(&db_a, "vn-1")
+            .await
+            .unwrap()
+            .is_empty());
     }
 }

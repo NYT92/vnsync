@@ -303,12 +303,12 @@ const handleSave = async () => {
         <UCard variant="subtle">
           <div class="space-y-3">
             <UFormField label="Fetch / Refresh from VNDB">
-              <UFieldGroup class="w-full" size="lg">
+              <UFieldGroup class="w-full" size="md">
                 <UInput
                   v-model="vndbQuery"
                   icon="i-heroicons-magnifying-glass"
                   placeholder="Search VNDB..."
-                  size="lg"
+                  size="md"
                   class="flex-1"
                   @keyup.enter="handleSearchVndb"
                 />
@@ -316,7 +316,7 @@ const handleSave = async () => {
                   label="Search"
                   color="primary"
                   variant="subtle"
-                  size="lg"
+                  size="md"
                   :loading="isSearchingVndb"
                   @click="handleSearchVndb"
                 />
@@ -355,22 +355,22 @@ const handleSave = async () => {
         <!-- Metadata Fields -->
         <div class="space-y-4">
           <UFormField label="Title" required>
-            <UInput v-model="form.title" size="lg" class="w-full" />
+            <UInput v-model="form.title" size="md" class="w-full" />
           </UFormField>
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <UFormField label="Original Title">
-              <UInput v-model="form.originalTitle" size="lg" class="w-full" />
+              <UInput v-model="form.originalTitle" size="md" class="w-full" />
             </UFormField>
 
             <UFormField label="Developer">
-              <UInput v-model="form.developer" size="lg" class="w-full" />
+              <UInput v-model="form.developer" size="md" class="w-full" />
             </UFormField>
           </div>
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <UFormField label="Status">
-              <USelect v-model="form.status" :items="statuses" size="lg" class="w-full" />
+              <USelect v-model="form.status" :items="statuses" size="md" class="w-full" />
             </UFormField>
 
             <UFormField :label="`Completion (${form.progress}%)`">
@@ -379,7 +379,7 @@ const handleSave = async () => {
                 type="number"
                 min="0"
                 max="100"
-                size="lg"
+                size="md"
                 class="w-full"
               />
             </UFormField>
@@ -387,20 +387,20 @@ const handleSave = async () => {
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <UFormField label="Release Date">
-              <UInput v-model="form.releaseDate" type="date" size="lg" class="w-full" />
+              <UInput v-model="form.releaseDate" type="date" size="md" class="w-full" />
             </UFormField>
 
             <UFormField label="VNDB ID">
-              <UInput v-model="form.vndbId" placeholder="e.g. v17" size="lg" class="w-full" />
+              <UInput v-model="form.vndbId" placeholder="e.g. v17" size="md" class="w-full" />
             </UFormField>
           </div>
 
           <UFormField label="Cover Image URL">
-            <UInput v-model="form.thumbnail" placeholder="https://..." size="lg" class="w-full" />
+            <UInput v-model="form.thumbnail" placeholder="https://..." size="md" class="w-full" />
           </UFormField>
 
           <UFormField label="Description / Notes">
-            <UTextarea v-model="form.description" :rows="3" size="lg" class="w-full" />
+            <UTextarea v-model="form.description" :rows="3" size="md" class="w-full" />
           </UFormField>
         </div>
 
@@ -408,14 +408,14 @@ const handleSave = async () => {
 
         <div class="space-y-4">
           <UFormField label="Game Executable">
-            <UFieldGroup class="w-full" size="lg">
-              <UInput v-model="form.exePath" size="lg" class="flex-1" />
+            <UFieldGroup class="w-full" size="md">
+              <UInput v-model="form.exePath" size="md" class="flex-1" />
               <UButton
                 label="Folder"
                 icon="i-heroicons-folder-open"
                 color="neutral"
                 variant="subtle"
-                size="lg"
+                size="md"
                 @click="browseGameFolder"
               />
               <UButton
@@ -423,7 +423,7 @@ const handleSave = async () => {
                 icon="i-heroicons-command-line"
                 color="neutral"
                 variant="outline"
-                size="lg"
+                size="md"
                 @click="browseExecutable"
               />
               <UButton
@@ -431,7 +431,7 @@ const handleSave = async () => {
                 icon="i-heroicons-bolt"
                 color="primary"
                 variant="soft"
-                size="lg"
+                size="md"
                 @click="runEngineAutoDetect"
               />
             </UFieldGroup>
@@ -439,14 +439,14 @@ const handleSave = async () => {
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <UFormField label="Engine">
-              <USelect v-model="form.engine" :items="engines" size="lg" class="w-full" />
+              <USelect v-model="form.engine" :items="engines" size="md" class="w-full" />
             </UFormField>
 
             <UFormField label="Wine / Proton Prefix">
               <UInput
                 v-model="form.protonPrefix"
                 placeholder="Optional Linux prefix"
-                size="lg"
+                size="md"
                 class="w-full"
                 @change="refreshPreview"
               />
@@ -461,7 +461,7 @@ const handleSave = async () => {
               :items="presetSelectItems"
               placeholder="Apply preset from Save Location Database..."
               class="w-full"
-              size="lg"
+              size="md"
               @update:model-value="applySavePreset"
             />
 
@@ -482,16 +482,16 @@ const handleSave = async () => {
                 icon="i-heroicons-trash"
                 color="error"
                 variant="ghost"
-                size="lg"
+                size="md"
                 @click="removeSavePath(idx)"
               />
             </div>
 
-            <UFieldGroup class="w-full" size="lg">
+            <UFieldGroup class="w-full" size="md">
               <UInput
                 v-model="newSavePath"
                 placeholder="<game_dir>/*.sav, <win_appdata>/RenPy/..., or <game_dir>/save"
-                size="lg"
+                size="md"
                 class="flex-1"
                 @keyup.enter="addCustomSavePattern"
               />
@@ -499,7 +499,7 @@ const handleSave = async () => {
                 label="Add"
                 color="neutral"
                 variant="subtle"
-                size="lg"
+                size="md"
                 @click="addCustomSavePattern"
               />
               <UButton
@@ -507,7 +507,7 @@ const handleSave = async () => {
                 icon="i-heroicons-document-plus"
                 color="neutral"
                 variant="outline"
-                size="lg"
+                size="md"
                 @click="browseSaveFile"
               />
               <UButton
@@ -515,7 +515,7 @@ const handleSave = async () => {
                 icon="i-heroicons-folder-plus"
                 color="neutral"
                 variant="outline"
-                size="lg"
+                size="md"
                 @click="browseSaveFolder"
               />
             </UFieldGroup>
@@ -530,14 +530,14 @@ const handleSave = async () => {
           label="Cancel"
           color="neutral"
           variant="ghost"
-          size="lg"
+          size="md"
           @click="isOpen = false"
         />
         <UButton
           label="Save Changes"
           icon="i-heroicons-check"
           color="primary"
-          size="lg"
+          size="md"
           :loading="isSaving"
           :disabled="!form.title.trim()"
           @click="handleSave"

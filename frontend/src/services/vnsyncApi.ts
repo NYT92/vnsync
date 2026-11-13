@@ -116,6 +116,20 @@ export interface RemoteGameHead {
   updatedAt: string
   fileCount: number
   totalBytes: number
+  ancestors?: string[]
+}
+
+export interface GameStorageUsage {
+  gameId: string
+  title: string
+  snapshotCount: number
+  pinnedCount: number
+  localBytes: number
+}
+
+export interface PruneOutcome {
+  deleted: number
+  freedBytes: number
 }
 
 export interface SyncOutcome {
@@ -225,6 +239,40 @@ export const VnSyncApi = {
 
   async restoreSnapshot(gameId: string, snapshotId: string): Promise<number> {
     return invoke<number>('restore_game_snapshot', { gameId, snapshotId })
+  },
+
+  async deleteSnapshot(snapshotId: string): Promise<void> {
+    return invoke<void>('delete_game_snapshot', { snapshotId })
+  },
+
+  async setSnapshotPinned(snapshotId: string, pinned: boolean): Promise<void> {
+    return invoke<void>('set_snapshot_pinned', { snapshotId, pinned })
+  },
+
+  async exportSnapshot(snapshotId: string, destPath: string): Promise<void> {
+    return invoke<void>('export_game_snapshot', { snapshotId, destPath })
+  },
+
+  async listCloudSnapshots(gameId: string): Promise<RemoteGameHead[]> {
+    if (!isTauri()) return []
+    return invoke<RemoteGameHead[]>('list_game_cloud_snapshots', { gameId })
+  },
+
+  async restoreCloudSnapshot(gameId: string, snapshotId: string): Promise<number> {
+    return invoke<number>('restore_game_cloud_snapshot', { gameId, snapshotId })
+  },
+
+  async deleteCloudGameData(gameId: string): Promise<void> {
+    return invoke<void>('delete_game_cloud_data', { gameId })
+  },
+
+  async getStorageUsage(): Promise<GameStorageUsage[]> {
+    if (!isTauri()) return []
+    return invoke<GameStorageUsage[]>('get_storage_usage')
+  },
+
+  async pruneLocalSnapshots(gameId: string | null, keep: number): Promise<PruneOutcome> {
+    return invoke<PruneOutcome>('prune_local_snapshots', { gameId, keep })
   },
 
   async syncGameNow(

@@ -11,15 +11,18 @@ use resolver::{
     parse_save_locations_json, resolve_or_remap_exe_path, resolve_save_path, to_canonical_path,
     DetectionResult, SaveLocationDbStatus, DEFAULT_SAVE_LOCATIONS_JSON,
 };
-use snapshot::{create_snapshot, restore_snapshot_archive};
+use serde::Serialize;
+use snapshot::create_snapshot;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use sync::{
-    build_library_catalog, heal_library_paths, merge_library_catalog, parse_library_catalog_json,
-    sync_game, sync_library_catalog, test_storage_connection, LibrarySyncOutcome, SyncOutcome,
+    build_library_catalog, delete_cloud_game_data, heal_library_paths, list_cloud_snapshots,
+    merge_library_catalog, parse_library_catalog_json, restore_as_new_snapshot,
+    restore_cloud_snapshot, sync_game, sync_library_catalog, test_storage_connection,
+    LibrarySyncOutcome, RemoteGameHead, SyncOutcome,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -250,29 +253,178 @@ fn restore_game_snapshot(
         .get_game(&game_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Game not found".to_string())?;
-    let settings = state.db.get_settings().map_err(|e| e.to_string())?;
-
-    if settings.backup_before_sync {
-        let _ = create_snapshot(
-            &game,
-            &state.vault_dir,
-            &settings.device_id,
-            &settings.device_name,
-            "Pre-restore safety backup",
-        )
-        .and_then(|(rec, _)| state.db.insert_snapshot(&rec).map_err(|e| e.to_string()));
-    }
-
     let snap = state
         .db
         .get_snapshot(&snapshot_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Snapshot not found".to_string())?;
 
-    let count = restore_snapshot_archive(&game, Path::new(&snap.local_archive_path))?;
-    game.head_snapshot_id = Some(snap.id);
-    state.db.upsert_game(&game).map_err(|e| e.to_string())?;
+    let note = format!("Restored: {}", snap.note);
+    let (count, _) = restore_as_new_snapshot(
+        &state.db,
+        &state.vault_dir,
+        &mut game,
+        Path::new(&snap.local_archive_path),
+        None,
+        &note,
+    )?;
     Ok(count)
+}
+
+/// Removes a snapshot's DB row, archive and manifest. The current head is kept.
+fn delete_local_snapshot(db: &Database, snap: &SnapshotRecord) -> Result<u64, String> {
+    let game = db.get_game(&snap.game_id).map_err(|e| e.to_string())?;
+    if game.and_then(|g| g.head_snapshot_id).as_deref() == Some(snap.id.as_str()) {
+        return Err("The current HEAD snapshot cannot be deleted".to_string());
+    }
+    let archive = Path::new(&snap.local_archive_path);
+    let freed = std::fs::metadata(archive).map(|m| m.len()).unwrap_or(0);
+    let _ = std::fs::remove_file(archive);
+    let _ = std::fs::remove_file(archive.with_extension("").with_extension("json"));
+    db.delete_snapshot(&snap.id).map_err(|e| e.to_string())?;
+    Ok(freed)
+}
+
+#[tauri::command]
+fn delete_game_snapshot(state: State<'_, AppState>, snapshot_id: String) -> Result<(), String> {
+    let snap = state
+        .db
+        .get_snapshot(&snapshot_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Snapshot not found".to_string())?;
+    delete_local_snapshot(&state.db, &snap).map(|_| ())
+}
+
+#[tauri::command]
+fn set_snapshot_pinned(
+    state: State<'_, AppState>,
+    snapshot_id: String,
+    pinned: bool,
+) -> Result<(), String> {
+    state
+        .db
+        .set_snapshot_pinned(&snapshot_id, pinned)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn export_game_snapshot(
+    state: State<'_, AppState>,
+    snapshot_id: String,
+    dest_path: String,
+) -> Result<(), String> {
+    let snap = state
+        .db
+        .get_snapshot(&snapshot_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Snapshot not found".to_string())?;
+    std::fs::copy(&snap.local_archive_path, &dest_path)
+        .map(|_| ())
+        .map_err(|e| format!("Export failed: {}", e))
+}
+
+#[tauri::command]
+async fn list_game_cloud_snapshots(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> Result<Vec<RemoteGameHead>, String> {
+    list_cloud_snapshots(&state.db, &game_id).await
+}
+
+#[tauri::command]
+async fn restore_game_cloud_snapshot(
+    state: State<'_, AppState>,
+    game_id: String,
+    snapshot_id: String,
+) -> Result<usize, String> {
+    restore_cloud_snapshot(&state.db, &state.vault_dir, &game_id, &snapshot_id)
+        .await
+        .map(|(count, _)| count)
+}
+
+#[tauri::command]
+async fn delete_game_cloud_data(state: State<'_, AppState>, game_id: String) -> Result<(), String> {
+    delete_cloud_game_data(&state.db, &game_id).await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GameStorageUsage {
+    game_id: String,
+    title: String,
+    snapshot_count: usize,
+    pinned_count: usize,
+    local_bytes: u64,
+}
+
+#[tauri::command]
+fn get_storage_usage(state: State<'_, AppState>) -> Result<Vec<GameStorageUsage>, String> {
+    let games = state.db.list_games().map_err(|e| e.to_string())?;
+    games
+        .into_iter()
+        .map(|g| {
+            let snaps = state.db.list_snapshots(&g.id).map_err(|e| e.to_string())?;
+            Ok(GameStorageUsage {
+                snapshot_count: snaps.len(),
+                pinned_count: snaps.iter().filter(|s| s.pinned).count(),
+                local_bytes: snaps
+                    .iter()
+                    .filter_map(|s| std::fs::metadata(&s.local_archive_path).ok())
+                    .map(|m| m.len())
+                    .sum(),
+                game_id: g.id,
+                title: g.title,
+            })
+        })
+        .collect()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PruneOutcome {
+    deleted: usize,
+    freed_bytes: u64,
+}
+
+/// Keeps the newest `keep` snapshots per game plus pinned ones and the HEAD; deletes the rest.
+/// `game_id` None prunes every game.
+#[tauri::command]
+fn prune_local_snapshots(
+    state: State<'_, AppState>,
+    game_id: Option<String>,
+    keep: usize,
+) -> Result<PruneOutcome, String> {
+    let ids = match game_id {
+        Some(id) => vec![id],
+        None => state
+            .db
+            .list_games()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .map(|g| g.id)
+            .collect(),
+    };
+    let mut out = PruneOutcome {
+        deleted: 0,
+        freed_bytes: 0,
+    };
+    for id in ids {
+        let head = state
+            .db
+            .get_game(&id)
+            .map_err(|e| e.to_string())?
+            .and_then(|g| g.head_snapshot_id);
+        // list_snapshots is newest first
+        let snaps = state.db.list_snapshots(&id).map_err(|e| e.to_string())?;
+        for snap in snaps.iter().skip(keep) {
+            if snap.pinned || head.as_deref() == Some(snap.id.as_str()) {
+                continue;
+            }
+            out.freed_bytes += delete_local_snapshot(&state.db, snap)?;
+            out.deleted += 1;
+        }
+    }
+    Ok(out)
 }
 
 #[tauri::command]
@@ -599,6 +751,14 @@ pub fn run() {
             list_game_snapshots,
             create_manual_snapshot,
             restore_game_snapshot,
+            delete_game_snapshot,
+            set_snapshot_pinned,
+            export_game_snapshot,
+            list_game_cloud_snapshots,
+            restore_game_cloud_snapshot,
+            delete_game_cloud_data,
+            get_storage_usage,
+            prune_local_snapshots,
             sync_game_now,
             get_storage_profiles,
             save_storage_profile,

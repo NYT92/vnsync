@@ -22,6 +22,12 @@ const router = createRouter({
       meta: { title: 'Game & Save History' }
     },
     {
+      path: '/storage',
+      name: 'storage',
+      component: () => import('@/pages/storage.vue'),
+      meta: { title: 'Save Storage' }
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('@/pages/settings.vue'),

@@ -373,7 +373,7 @@ const handleSubmit = async () => {
                     Auto-Fill from VNDB
                   </h2>
                 </div>
-                <UBadge label="VNDB API v2" color="primary" variant="subtle" size="lg" />
+                <UBadge label="VNDB API v2" color="primary" variant="subtle" size="sm" />
               </div>
             </template>
 
@@ -382,12 +382,12 @@ const handleSubmit = async () => {
                 label="Search Visual Novel Title"
                 description="Fetch official cover art, developer, release date, and synopsis."
               >
-                <UFieldGroup class="w-full" size="lg">
+                <UFieldGroup class="w-full" size="md">
                   <UInput
                     v-model="vndbQuery"
                     icon="i-heroicons-magnifying-glass"
                     placeholder="e.g. Steins;Gate, Fate/stay night, Clannad..."
-                    size="lg"
+                    size="md"
                     class="flex-1"
                     @keyup.enter="handleSearchVndb"
                   />
@@ -395,7 +395,7 @@ const handleSubmit = async () => {
                     label="Search"
                     color="primary"
                     variant="subtle"
-                    size="lg"
+                    size="md"
                     :loading="isSearchingVndb"
                     @click="handleSearchVndb"
                   />
@@ -428,7 +428,7 @@ const handleSubmit = async () => {
                         {{ item.developer || item.alttitle }}
                       </p>
                       <div class="flex items-center gap-1.5 mt-1">
-                        <UBadge :label="item.id" size="lg" color="neutral" variant="outline" />
+                        <UBadge :label="item.id" size="sm" color="neutral" variant="outline" />
                         <span class="text-[10px] text-muted">{{ item.released }}</span>
                       </div>
                     </div>
@@ -451,7 +451,7 @@ const handleSubmit = async () => {
                   :label="`${form.engine} • ${detectedFileCount} files`"
                   color="success"
                   variant="subtle"
-                  size="lg"
+                  size="sm"
                 />
               </div>
             </template>
@@ -461,12 +461,12 @@ const handleSubmit = async () => {
                 label="Game Executable"
                 description="Select the game's .exe or binary to automatically fingerprint its engine and save folder."
               >
-                <UFieldGroup class="w-full" size="lg">
+                <UFieldGroup class="w-full" size="md">
                   <UInput
                     v-model="form.exePath"
                     icon="i-heroicons-command-line"
                     placeholder="C:\Games\MyVN\Game.exe"
-                    size="lg"
+                    size="md"
                     class="flex-1"
                     @change="runEngineAutoDetect"
                   />
@@ -475,7 +475,7 @@ const handleSubmit = async () => {
                     icon="i-heroicons-folder-open"
                     color="neutral"
                     variant="subtle"
-                    size="lg"
+                    size="md"
                     @click="browseExecutable"
                   />
                   <UButton
@@ -483,7 +483,7 @@ const handleSubmit = async () => {
                     icon="i-heroicons-bolt"
                     color="primary"
                     variant="soft"
-                    size="lg"
+                    size="md"
                     @click="runEngineAutoDetect"
                   />
                 </UFieldGroup>
@@ -491,7 +491,7 @@ const handleSubmit = async () => {
 
               <div class="grid gap-4">
                 <UFormField label="Detected Engine Profile">
-                  <USelect v-model="form.engine" :items="engines" size="lg" class="w-full" />
+                  <USelect v-model="form.engine" :items="engines" size="md" class="w-full" />
                 </UFormField>
 
                 <UFormField
@@ -501,7 +501,7 @@ const handleSubmit = async () => {
                   <UInput
                     v-model="form.protonPrefix"
                     placeholder="/home/deck/.../compatdata/12345"
-                    size="lg"
+                    size="md"
                     class="w-full"
                     @change="refreshPreview"
                   />
@@ -520,7 +520,7 @@ const handleSubmit = async () => {
                       :label="saveDbSource === 'custom' ? `Custom JSON (${savePresets.length})` : `Default JSON (${savePresets.length})`"
                       :color="saveDbSource === 'custom' ? 'warning' : 'primary'"
                       variant="subtle"
-                      size="lg"
+                      size="sm"
                     />
                   </div>
                   <div class="flex items-center gap-1.5">
@@ -529,7 +529,7 @@ const handleSubmit = async () => {
                       icon="i-heroicons-arrow-up-tray"
                       color="neutral"
                       variant="subtle"
-                      size="lg"
+                      size="md"
                       @click="handleLoadCustomJson"
                     />
                     <UButton
@@ -538,7 +538,7 @@ const handleSubmit = async () => {
                       icon="i-heroicons-arrow-path"
                       color="neutral"
                       variant="ghost"
-                      size="lg"
+                      size="md"
                       @click="handleResetDefaultJson"
                     />
                   </div>
@@ -549,7 +549,7 @@ const handleSubmit = async () => {
                   :items="presetSelectItems"
                   placeholder="Select game / engine preset (e.g. Nitro+CHiRAL, Nitroplus, STEINS;GATE, Key...)"
                   class="w-full"
-                  size="lg"
+                  size="md"
                   @update:model-value="applySavePreset"
                 />
               </div>
@@ -572,25 +572,25 @@ const handleSubmit = async () => {
                     icon="i-heroicons-trash"
                     color="error"
                     variant="ghost"
-                    size="lg"
+                    size="md"
                     @click="removeSavePath(idx)"
                   />
                 </div>
               </div>
 
-              <UFieldGroup class="w-full" size="lg">
+              <UFieldGroup class="w-full" size="md">
                 <UInput
                   v-model="newSavePath"
                   placeholder="e.g. <game_dir>/*.sav, <win_appdata>/RenPy/GameID, or <game_dir>/savedata"
                   class="flex-1"
-                  size="lg"
+                  size="md"
                   @keyup.enter="addCustomSavePattern"
                 />
                 <UButton
                   label="Add Rule"
                   color="neutral"
                   variant="subtle"
-                  size="lg"
+                  size="md"
                   @click="addCustomSavePattern"
                 />
                 <UButton
@@ -598,7 +598,7 @@ const handleSubmit = async () => {
                   icon="i-heroicons-document-plus"
                   color="neutral"
                   variant="outline"
-                  size="lg"
+                  size="md"
                   @click="browseSaveFile"
                 />
                 <UButton
@@ -606,7 +606,7 @@ const handleSubmit = async () => {
                   icon="i-heroicons-folder-plus"
                   color="neutral"
                   variant="outline"
-                  size="lg"
+                  size="md"
                   @click="browseSaveFolder"
                 />
               </UFieldGroup>
@@ -645,42 +645,42 @@ const handleSubmit = async () => {
                     :label="`VNDB ${form.vndbId}`"
                     color="primary"
                     variant="subtle"
-                    size="lg"
+                    size="sm"
                     class="mt-1"
                   />
                 </div>
               </div>
 
               <UFormField label="Game Title" required>
-                <UInput v-model="form.title" placeholder="Enter game title" size="lg" class="w-full" />
+                <UInput v-model="form.title" placeholder="Enter game title" size="md" class="w-full" />
               </UFormField>
 
               <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <UFormField label="Developer / Studio">
-                  <UInput v-model="form.developer" placeholder="e.g. Key, TYPE-MOON" size="lg" class="w-full" />
+                  <UInput v-model="form.developer" placeholder="e.g. Key, TYPE-MOON" size="md" class="w-full" />
                 </UFormField>
 
                 <UFormField label="Play Status">
-                  <USelect v-model="form.status" :items="statuses" size="lg" class="w-full" />
+                  <USelect v-model="form.status" :items="statuses" size="md" class="w-full" />
                 </UFormField>
               </div>
 
               <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <UFormField label="Release Date">
-                  <UInput v-model="form.releaseDate" type="date" size="lg" class="w-full" />
+                  <UInput v-model="form.releaseDate" type="date" size="md" class="w-full" />
                 </UFormField>
 
                 <UFormField label="Original Title">
-                  <UInput v-model="form.originalTitle" placeholder="Japanese / Original title" size="lg" class="w-full" />
+                  <UInput v-model="form.originalTitle" placeholder="Japanese / Original title" size="md" class="w-full" />
                 </UFormField>
               </div>
 
               <UFormField label="Cover Image URL">
-                <UInput v-model="form.thumbnail" placeholder="https://..." size="lg" class="w-full" />
+                <UInput v-model="form.thumbnail" placeholder="https://..." size="md" class="w-full" />
               </UFormField>
 
               <UFormField label="Synopsis / Notes">
-                <UTextarea v-model="form.description" :rows="3" size="lg" class="w-full" />
+                <UTextarea v-model="form.description" :rows="3" size="md" class="w-full" />
               </UFormField>
 
               <UButton

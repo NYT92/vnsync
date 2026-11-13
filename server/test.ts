@@ -48,4 +48,8 @@ test("head compare-and-swap, history, retention", async () => {
   assert.deepEqual(history.map((h: any) => h.headSnapshotId), ["s3", "s2"]);
   assert.equal((await call("GET", snap("s1"))).status, 404); // pruned, KEEP_SNAPSHOTS=2
   assert.equal((await call("GET", snap("s3"))).status, 200);
+
+  assert.equal((await call("DELETE", "/api/games/g1")).status, 200);
+  assert.equal((await call("GET", HEAD)).status, 404);
+  assert.deepEqual(await (await call("GET", "/api/games/g1/history")).json(), []);
 });

@@ -225,7 +225,7 @@ const handleSaveAll = async () => {
                     :label="activeProfile.providerType.toUpperCase()"
                     color="primary"
                     variant="subtle"
-                    size="lg"
+                    size="sm"
                   />
                 </div>
               </template>
@@ -236,7 +236,7 @@ const handleSaveAll = async () => {
                     <UInput
                       v-model="activeProfile.name"
                       placeholder="e.g. Cloudflare R2 Saves"
-                      size="lg"
+                      size="md"
                       class="w-full"
                     />
                   </UFormField>
@@ -245,7 +245,7 @@ const handleSaveAll = async () => {
                     <USelect
                       v-model="activeProfile.providerType"
                       :items="providerOptions"
-                      size="lg"
+                      size="md"
                       class="w-full"
                     />
                   </UFormField>
@@ -265,7 +265,7 @@ const handleSaveAll = async () => {
                     <UInput
                       v-model="activeProfile.endpoint"
                       placeholder="https://<account>.r2.cloudflarestorage.com"
-                      size="lg"
+                      size="md"
                       class="w-full"
                     />
                   </UFormField>
@@ -274,7 +274,7 @@ const handleSaveAll = async () => {
                     <UInput
                       v-model="activeProfile.bucket"
                       placeholder="vnsync-vault"
-                      size="lg"
+                      size="md"
                       class="w-full"
                     />
                   </UFormField>
@@ -283,7 +283,7 @@ const handleSaveAll = async () => {
                     <UInput
                       v-model="activeProfile.region"
                       placeholder="auto"
-                      size="lg"
+                      size="md"
                       class="w-full"
                     />
                   </UFormField>
@@ -292,20 +292,20 @@ const handleSaveAll = async () => {
                     <UInput
                       v-model="activeProfile.rootPrefix"
                       placeholder="vnsync"
-                      size="lg"
+                      size="md"
                       class="w-full"
                     />
                   </UFormField>
 
                   <UFormField label="Access Key ID">
-                    <UInput v-model="activeProfile.accessKey" size="lg" class="w-full" />
+                    <UInput v-model="activeProfile.accessKey" size="md" class="w-full" />
                   </UFormField>
 
                   <UFormField label="Secret Access Key">
                     <UInput
                       v-model="activeProfile.secretKey"
                       type="password"
-                      size="lg"
+                      size="md"
                       class="w-full"
                     />
                   </UFormField>
@@ -324,20 +324,20 @@ const handleSaveAll = async () => {
                     <UInput
                       v-model="activeProfile.endpoint"
                       placeholder="https://cloud.example.com/remote.php/dav/files/username/"
-                      size="lg"
+                      size="md"
                       class="w-full"
                     />
                   </UFormField>
 
                   <UFormField label="Username">
-                    <UInput v-model="activeProfile.accessKey" size="lg" class="w-full" />
+                    <UInput v-model="activeProfile.accessKey" size="md" class="w-full" />
                   </UFormField>
 
                   <UFormField label="Password / App Password">
                     <UInput
                       v-model="activeProfile.secretKey"
                       type="password"
-                      size="lg"
+                      size="md"
                       class="w-full"
                     />
                   </UFormField>
@@ -355,7 +355,7 @@ const handleSaveAll = async () => {
                     <UInput
                       v-model="activeProfile.endpoint"
                       placeholder="http://192.168.1.10:3000"
-                      size="lg"
+                      size="md"
                       class="w-full"
                     />
                   </UFormField>
@@ -364,7 +364,7 @@ const handleSaveAll = async () => {
                     <UInput
                       v-model="activeProfile.secretKey"
                       type="password"
-                      size="lg"
+                      size="md"
                       class="w-full"
                     />
                   </UFormField>
@@ -376,11 +376,11 @@ const handleSaveAll = async () => {
                     label="Local / Network Sync Folder"
                     description="Point VNSync to a Syncthing, Google Drive, Dropbox, OneDrive, or SMB network directory."
                   >
-                    <UFieldGroup class="w-full" size="lg">
+                    <UFieldGroup class="w-full" size="md">
                       <UInput
                         v-model="activeProfile.endpoint"
                         placeholder="C:\Users\You\Syncthing\VNSync"
-                        size="lg"
+                        size="md"
                         class="flex-1"
                       />
                       <UButton
@@ -388,7 +388,7 @@ const handleSaveAll = async () => {
                         icon="i-heroicons-folder-open"
                         color="neutral"
                         variant="subtle"
-                        size="lg"
+                        size="md"
                         @click="browseLocalSyncFolder"
                       />
                     </UFieldGroup>
@@ -407,7 +407,7 @@ const handleSaveAll = async () => {
                       icon="i-heroicons-signal"
                       color="neutral"
                       variant="subtle"
-                      size="lg"
+                      size="md"
                       :loading="isTesting"
                       @click="handleTestConnection"
                     />
@@ -415,7 +415,7 @@ const handleSaveAll = async () => {
                       label="Save Backend"
                       icon="i-heroicons-check"
                       color="primary"
-                      size="lg"
+                      size="md"
                       :loading="isSaving"
                       @click="handleSaveAll"
                     />
@@ -448,7 +448,7 @@ const handleSaveAll = async () => {
                     <UInput
                       v-model="settings.deviceName"
                       placeholder="Desktop-Win11 or Steam-Deck"
-                      size="lg"
+                      size="md"
                       class="w-full"
                     />
                   </UFormField>
@@ -460,7 +460,7 @@ const handleSaveAll = async () => {
                     <UInput
                       v-model.number="settings.maxLocalSnapshots"
                       type="number"
-                      size="lg"
+                      size="md"
                       class="w-full"
                     />
                   </UFormField>
@@ -470,11 +470,11 @@ const handleSaveAll = async () => {
                   label="Default Game Library Root Folder"
                   description="Used to auto-locate synced games when moving across PCs or OS user accounts."
                 >
-                  <UFieldGroup class="w-full" size="lg">
+                  <UFieldGroup class="w-full" size="md">
                     <UInput
                       v-model="settings.gameLibraryPath"
                       placeholder="C:\Users\You\Games or D:\VisualNovels"
-                      size="lg"
+                      size="md"
                       class="flex-1"
                     />
                     <UButton
@@ -482,7 +482,7 @@ const handleSaveAll = async () => {
                       icon="i-heroicons-folder-open"
                       color="neutral"
                       variant="subtle"
-                      size="lg"
+                      size="md"
                       @click="browseGameLibraryRoot"
                     />
                     <UButton
@@ -490,7 +490,7 @@ const handleSaveAll = async () => {
                       icon="i-heroicons-wrench-screwdriver"
                       color="primary"
                       variant="soft"
-                      size="lg"
+                      size="md"
                       @click="handleHealPaths"
                     />
                   </UFieldGroup>
@@ -547,7 +547,7 @@ const handleSaveAll = async () => {
                     label="Save Preferences"
                     icon="i-heroicons-check"
                     color="primary"
-                    size="lg"
+                    size="md"
                     :loading="isSaving"
                     @click="handleSaveAll"
                   />

@@ -146,8 +146,8 @@ const appInfo = {
                 <h1 class="text-2xl font-bold text-highlighted">
                   {{ appInfo.name }}
                 </h1>
-                <UBadge :label="`v${currentVersion}`" color="primary" variant="subtle" size="lg" />
-                <UBadge :label="appInfo.license" color="success" variant="subtle" size="lg" />
+                <UBadge :label="`v${currentVersion}`" color="primary" variant="subtle" size="sm" />
+                <UBadge :label="appInfo.license" color="success" variant="subtle" size="sm" />
               </div>
               <p class="text-sm text-muted">
                 {{ appInfo.description }}

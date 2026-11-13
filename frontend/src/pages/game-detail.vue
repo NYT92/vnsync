@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { open } from '@tauri-apps/plugin-dialog'
+import { open, save, ask } from '@tauri-apps/plugin-dialog'
 import type { TabsItem, ContextMenuItem } from '@nuxt/ui'
 import {
   VnSyncApi,
@@ -10,7 +10,8 @@ import {
   formatBytes,
   type Game,
   type SnapshotRecord,
-  type SyncOutcome
+  type SyncOutcome,
+  type RemoteGameHead
 } from '@/services/vnsyncApi'
 import EditGameSlideover from '@/components/EditGameSlideover.vue'
 
@@ -27,6 +28,9 @@ const isBusy = ref(false)
 const isRunning = ref(false)
 const syncOutcome = ref<SyncOutcome | null>(null)
 const isEditOpen = ref(false)
+const cloudSnapshots = ref<RemoteGameHead[]>([])
+const cloudError = ref('')
+const isCloudLoading = ref(false)
 
 let unlistenStarted: UnlistenFn | null = null
 let unlistenExited: UnlistenFn | null = null
@@ -36,6 +40,11 @@ const tabItems: TabsItem[] = [
     label: 'Save Vault & History',
     icon: 'i-heroicons-archive-box',
     slot: 'vault'
+  },
+  {
+    label: 'Cloud Saves',
+    icon: 'i-heroicons-cloud',
+    slot: 'cloud'
   },
   {
     label: 'Path Mapping & Proton',
@@ -64,8 +73,22 @@ const loadAll = async () => {
   )
 }
 
+const loadCloud = async () => {
+  isCloudLoading.value = true
+  cloudError.value = ''
+  try {
+    cloudSnapshots.value = await VnSyncApi.listCloudSnapshots(gameId)
+  } catch (err: any) {
+    cloudSnapshots.value = []
+    cloudError.value = String(err)
+  } finally {
+    isCloudLoading.value = false
+  }
+}
+
 onMounted(async () => {
   await loadAll()
+  loadCloud()
   try {
     unlistenStarted = await listen<string>('game:started', event => {
       if (event.payload === gameId) isRunning.value = true
@@ -135,6 +158,84 @@ const handleRestore = async (snap: SnapshotRecord) => {
   }
 }
 
+const showError = (title: string, err: unknown) =>
+  toast.add({
+    title,
+    description: String(err),
+    color: 'error',
+    icon: 'i-heroicons-exclamation-circle'
+  })
+
+const handleCloudRestore = async (head: RemoteGameHead) => {
+  if (!game.value) return
+  const when = new Date(head.updatedAt).toLocaleString()
+  const ok = await ask(
+    `Replace this PC's current saves with the cloud save from ${head.deviceName} (${when})? A safety backup is created first.`,
+    { title: 'Restore Cloud Save', kind: 'warning' }
+  )
+  if (!ok) return
+  isBusy.value = true
+  try {
+    const count = await VnSyncApi.restoreCloudSnapshot(game.value.id, head.headSnapshotId)
+    toast.add({
+      title: 'Cloud Save Restored',
+      description: `Restored ${count} files from ${head.deviceName}. Sync to share it with other PCs.`,
+      color: 'success',
+      icon: 'i-heroicons-cloud-arrow-down'
+    })
+    await loadAll()
+  } catch (err) {
+    showError('Restore Failed', err)
+  } finally {
+    isBusy.value = false
+  }
+}
+
+const handleTogglePin = async (snap: SnapshotRecord) => {
+  try {
+    await VnSyncApi.setSnapshotPinned(snap.id, !snap.pinned)
+    await loadAll()
+  } catch (err) {
+    showError('Pin Failed', err)
+  }
+}
+
+const handleExportSnapshot = async (snap: SnapshotRecord) => {
+  if (!game.value) return
+  try {
+    const stamp = snap.createdAt.slice(0, 19).replace(/[T:]/g, '-')
+    const dest = await save({
+      title: 'Export Save Snapshot',
+      defaultPath: `${game.value.title.replace(/[\\/:*?"<>|]/g, '_')}-${stamp}.tar.zst`,
+      filters: [{ name: 'Snapshot Archive', extensions: ['zst'] }]
+    })
+    if (!dest) return
+    await VnSyncApi.exportSnapshot(snap.id, dest)
+    toast.add({
+      title: 'Snapshot Exported',
+      description: dest,
+      color: 'success',
+      icon: 'i-heroicons-arrow-down-tray'
+    })
+  } catch (err) {
+    showError('Export Failed', err)
+  }
+}
+
+const handleDeleteSnapshot = async (snap: SnapshotRecord) => {
+  const ok = await ask(
+    `Delete "${snap.note || 'Save Checkpoint'}" from this PC? Cloud copies are not affected.`,
+    { title: 'Delete Snapshot', kind: 'warning' }
+  )
+  if (!ok) return
+  try {
+    await VnSyncApi.deleteSnapshot(snap.id)
+    await loadAll()
+  } catch (err) {
+    showError('Delete Failed', err)
+  }
+}
+
 const handleSync = async (forceDirection?: 'push' | 'pull') => {
   if (!game.value) return
   isBusy.value = true
@@ -151,6 +252,7 @@ const handleSync = async (forceDirection?: 'push' | 'pull') => {
           : 'i-heroicons-cloud-arrow-up'
     })
     await loadAll()
+    loadCloud()
   } catch (err: any) {
     toast.add({
       title: 'Sync Error',
@@ -237,6 +339,16 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
       onSelect: () => handleRestore(snap)
     },
     {
+      label: snap.pinned ? 'Unpin' : 'Pin (keep when pruning)',
+      icon: 'i-heroicons-bookmark',
+      onSelect: () => handleTogglePin(snap)
+    },
+    {
+      label: 'Export .tar.zst',
+      icon: 'i-heroicons-arrow-down-tray',
+      onSelect: () => handleExportSnapshot(snap)
+    },
+    {
       label: 'Copy BLAKE3 Hash',
       icon: 'i-heroicons-clipboard-document',
       onSelect: () => {
@@ -247,6 +359,15 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
           color: 'neutral'
         })
       }
+    }
+  ],
+  [
+    {
+      label: 'Delete Snapshot',
+      icon: 'i-heroicons-trash',
+      color: 'error',
+      disabled: game.value?.headSnapshotId === snap.id,
+      onSelect: () => handleDeleteSnapshot(snap)
     }
   ]
 ]
@@ -309,10 +430,10 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
     </template>
 
     <template #body>
-      <div class="max-w-5xl mx-auto space-y-6">
+      <div class="w-full max-w-5xl mx-auto space-y-6">
         <!-- Hero Banner Card -->
         <UCard variant="subtle">
-          <div class="flex flex-col lg:flex-row gap-5 items-start">
+          <div class="flex flex-col lg:flex-row gap-6 items-start">
             <img
               :src="
                 game.thumbnail ||
@@ -320,12 +441,12 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                   encodeURIComponent(game.title)
               "
               :alt="game.title"
-              class="w-28 h-40 object-cover rounded-lg shadow shrink-0"
+              class="w-40 h-56 object-cover rounded-lg shadow-md shrink-0"
             />
 
-            <div class="flex-1 min-w-0 space-y-2.5">
+            <div class="flex-1 min-w-0 space-y-3">
               <div class="flex items-center gap-2 flex-wrap">
-                <UBadge :label="game.engine" color="primary" variant="subtle" size="lg" />
+                <UBadge :label="game.engine" color="primary" variant="subtle" size="md" />
                 <UBadge
                   :label="game.syncStatus"
                   :color="
@@ -335,38 +456,38 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                         ? 'error'
                         : 'neutral'
                   "
-                  size="lg"
+                  size="md"
                 />
-                <UBadge :label="game.status" color="neutral" variant="outline" size="lg" />
+                <UBadge :label="game.status" color="neutral" variant="outline" size="md" />
                 <UBadge
                   v-if="game.vndbId"
                   :label="`VNDB ${game.vndbId}`"
                   color="neutral"
                   variant="subtle"
-                  size="lg"
+                  size="md"
                 />
               </div>
 
               <div>
-                <h1 class="text-2xl font-bold text-highlighted">
+                <h1 class="text-3xl font-bold text-highlighted">
                   {{ game.title }}
                 </h1>
-                <p class="text-xs text-muted">
+                <p class="text-sm text-muted">
                   {{ game.originalTitle ? `${game.originalTitle} • ` : '' }}{{ game.developer || 'Unknown Studio' }}
                 </p>
               </div>
 
-              <p class="text-xs text-muted line-clamp-2">
+              <p class="text-sm text-muted line-clamp-3">
                 {{ game.description || 'No description provided.' }}
               </p>
 
-              <div class="flex flex-wrap items-center gap-4 pt-1 text-xs text-muted">
+              <div class="flex flex-wrap items-center gap-4 pt-1 text-sm text-muted">
                 <span class="flex items-center gap-1">
-                  <UIcon name="i-heroicons-clock" class="size-4 text-primary" />
+                  <UIcon name="i-heroicons-clock" class="size-5 text-primary" />
                   Playtime: <strong class="text-highlighted">{{ formatPlaytime(game.playtimeSeconds) }}</strong>
                 </span>
                 <span class="flex items-center gap-1">
-                  <UIcon name="i-heroicons-archive-box" class="size-4 text-primary" />
+                  <UIcon name="i-heroicons-archive-box" class="size-5 text-primary" />
                   Snapshots: <strong class="text-highlighted">{{ snapshots.length }}</strong>
                 </span>
                 <span v-if="game.lastPlayedAt">
@@ -381,7 +502,7 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                   icon="i-heroicons-pencil-square"
                   color="neutral"
                   variant="ghost"
-                  size="lg"
+                  size="md"
                   @click="isEditOpen = true"
                 />
               </UTooltip>
@@ -394,16 +515,16 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                   icon="i-heroicons-trash"
                   color="error"
                   variant="ghost"
-                  size="lg"
+                  size="md"
                 />
 
                 <template #footer="{ close }">
                   <div class="flex justify-end gap-2 w-full">
-                    <UButton label="Cancel" color="neutral" variant="ghost" size="lg" @click="close" />
+                    <UButton label="Cancel" color="neutral" variant="ghost" size="md" @click="close" />
                     <UButton
                       label="Remove Game"
                       color="error"
-                      size="lg"
+                      size="md"
                       @click="
                         () => {
                           close()
@@ -441,7 +562,7 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                 <div class="space-y-2">
                   <div class="flex items-center justify-between">
                     <span class="text-xs font-bold text-highlighted">Local Device State</span>
-                    <UBadge label="Local" color="warning" variant="subtle" size="lg" />
+                    <UBadge label="Local" color="warning" variant="subtle" size="sm" />
                   </div>
                   <div v-if="syncOutcome?.localSnapshot" class="text-xs text-muted space-y-1">
                     <div>Device: {{ syncOutcome.localSnapshot.deviceName }}</div>
@@ -464,7 +585,7 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                 <div class="space-y-2">
                   <div class="flex items-center justify-between">
                     <span class="text-xs font-bold text-highlighted">Remote Cloud State</span>
-                    <UBadge label="Cloud" color="primary" variant="subtle" size="lg" />
+                    <UBadge label="Cloud" color="primary" variant="subtle" size="sm" />
                   </div>
                   <div v-if="syncOutcome?.remoteHead" class="text-xs text-muted space-y-1">
                     <div>Device: {{ syncOutcome.remoteHead.deviceName }}</div>
@@ -501,11 +622,11 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                     </p>
                   </div>
 
-                  <UFieldGroup size="lg">
+                  <UFieldGroup size="md">
                     <UInput
                       v-model="noteInput"
                       placeholder="Checkpoint label (e.g. Choice A)"
-                      size="lg"
+                      size="md"
                       class="w-56"
                       @keyup.enter="handleCreateCheckpoint"
                     />
@@ -513,7 +634,7 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                       label="Snapshot"
                       icon="i-heroicons-archive-box-arrow-down"
                       color="primary"
-                      size="lg"
+                      size="md"
                       :loading="isBusy"
                       @click="handleCreateCheckpoint"
                     />
@@ -548,13 +669,21 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                           label="HEAD"
                           color="success"
                           variant="subtle"
-                          size="lg"
+                          size="sm"
+                        />
+                        <UBadge
+                          v-if="snap.pinned"
+                          label="Pinned"
+                          icon="i-heroicons-bookmark"
+                          color="primary"
+                          variant="subtle"
+                          size="sm"
                         />
                         <UBadge
                           :label="snap.deviceName"
                           color="neutral"
                           variant="outline"
-                          size="lg"
+                          size="sm"
                         />
                       </div>
                       <div class="flex flex-wrap items-center gap-3 text-xs text-muted">
@@ -566,17 +695,108 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                       </div>
                     </div>
 
-                    <UButton
-                      label="Restore"
-                      icon="i-heroicons-arrow-uturn-left"
-                      color="neutral"
-                      variant="subtle"
-                      size="lg"
-                      :loading="isBusy"
-                      @click="handleRestore(snap)"
-                    />
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <UButton
+                        label="Restore"
+                        icon="i-heroicons-arrow-uturn-left"
+                        color="neutral"
+                        variant="subtle"
+                        size="md"
+                        :loading="isBusy"
+                        @click="handleRestore(snap)"
+                      />
+                      <UDropdownMenu :items="getSnapshotContextMenu(snap)">
+                        <UButton
+                          icon="i-heroicons-ellipsis-vertical"
+                          color="neutral"
+                          variant="ghost"
+                          size="md"
+                          aria-label="Snapshot actions"
+                        />
+                      </UDropdownMenu>
+                    </div>
                   </div>
                 </UContextMenu>
+              </div>
+            </UCard>
+          </template>
+
+          <template #cloud>
+            <UCard variant="outline" class="mt-3">
+              <template #header>
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 class="text-sm font-semibold text-highlighted">
+                      Cloud Save History
+                    </h3>
+                    <p class="text-xs text-muted">
+                      Saves uploaded by every PC. Restore one to download just that save onto this PC.
+                    </p>
+                  </div>
+                  <UButton
+                    label="Refresh"
+                    icon="i-heroicons-arrow-path"
+                    color="neutral"
+                    variant="subtle"
+                    size="md"
+                    :loading="isCloudLoading"
+                    @click="loadCloud"
+                  />
+                </div>
+              </template>
+
+              <UAlert
+                v-if="cloudError"
+                color="error"
+                variant="subtle"
+                icon="i-heroicons-exclamation-circle"
+                title="Could not load cloud saves"
+                :description="cloudError"
+              />
+              <UEmpty
+                v-else-if="cloudSnapshots.length === 0 && !isCloudLoading"
+                icon="i-heroicons-cloud"
+                title="No Cloud Saves Yet"
+                description="Click 'Sync Saves' to upload this game's saves."
+              />
+              <div v-else class="divide-y divide-default">
+                <div
+                  v-for="(head, idx) in cloudSnapshots"
+                  :key="head.headSnapshotId"
+                  class="py-3 first:pt-0 last:pb-0 flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-2"
+                >
+                  <div class="space-y-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-semibold text-highlighted truncate">
+                        {{ new Date(head.updatedAt).toLocaleString() }}
+                      </span>
+                      <UBadge v-if="idx === 0" label="Latest" color="success" variant="subtle" size="sm" />
+                      <UBadge
+                        v-if="game.headSnapshotId === head.headSnapshotId"
+                        label="On this PC"
+                        color="primary"
+                        variant="subtle"
+                        size="sm"
+                      />
+                      <UBadge :label="head.deviceName" color="neutral" variant="outline" size="sm" />
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3 text-xs text-muted">
+                      <span>{{ head.fileCount }} files ({{ formatBytes(head.totalBytes) }})</span>
+                      <span>•</span>
+                      <span class="font-mono text-[11px]">{{ head.treeHash.slice(0, 22) }}</span>
+                    </div>
+                  </div>
+
+                  <UButton
+                    label="Download & Restore"
+                    icon="i-heroicons-cloud-arrow-down"
+                    color="neutral"
+                    variant="subtle"
+                    size="md"
+                    :loading="isBusy"
+                    @click="handleCloudRestore(head)"
+                  />
+                </div>
               </div>
             </UCard>
           </template>
@@ -598,7 +818,7 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                     icon="i-heroicons-pencil-square"
                     color="neutral"
                     variant="subtle"
-                    size="lg"
+                    size="md"
                     @click="isEditOpen = true"
                   />
                 </div>
@@ -612,7 +832,7 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                 >
                   <div class="flex items-center justify-between">
                     <span class="text-xs font-mono font-bold text-primary">{{ pattern }}</span>
-                    <UBadge label="Canonical Rule" color="primary" variant="subtle" size="lg" />
+                    <UBadge label="Canonical Rule" color="primary" variant="subtle" size="sm" />
                   </div>
                   <div class="text-xs font-mono text-muted truncate">
                     Resolved Host Path: {{ resolvedPaths[idx] }}
@@ -628,7 +848,7 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                           :label="game.exePath && game.exeExists !== false ? 'Found' : 'Missing on this user/PC'"
                           :color="game.exePath && game.exeExists !== false ? 'success' : 'warning'"
                           variant="subtle"
-                          size="lg"
+                          size="sm"
                         />
                       </div>
                       <div class="font-mono text-muted mt-0.5">{{ game.exePath || 'Not configured' }}</div>
@@ -639,7 +859,7 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                         icon="i-heroicons-folder-open"
                         color="neutral"
                         variant="subtle"
-                        size="lg"
+                        size="md"
                         @click="handleLocateGame(true)"
                       />
                       <UButton
@@ -647,7 +867,7 @@ const getSnapshotContextMenu = (snap: SnapshotRecord): ContextMenuItem[][] => [
                         icon="i-heroicons-command-line"
                         color="neutral"
                         variant="outline"
-                        size="lg"
+                        size="md"
                         @click="handleLocateGame(false)"
                       />
                     </div>

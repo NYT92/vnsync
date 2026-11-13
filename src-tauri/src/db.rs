@@ -3,6 +3,31 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
 
+const KEYRING_SERVICE: &str = "vnsync";
+
+fn keyring_err(e: keyring::Error) -> rusqlite::Error {
+    rusqlite::Error::ToSqlConversionFailure(Box::new(e))
+}
+
+/// Secrets live in the OS keychain (Credential Manager / Keychain / Secret Service), never in SQLite.
+fn store_secret(profile_id: &str, secret: &str) -> Result<(), keyring::Error> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, profile_id)?;
+    if secret.is_empty() {
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(e),
+        }
+    } else {
+        entry.set_password(secret)
+    }
+}
+
+fn load_secret(profile_id: &str) -> String {
+    keyring::Entry::new(KEYRING_SERVICE, profile_id)
+        .and_then(|e| e.get_password())
+        .unwrap_or_default()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Game {
@@ -380,6 +405,21 @@ impl Database {
         rows.collect()
     }
 
+    pub fn delete_snapshot(&self, snapshot_id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM snapshots WHERE id = ?1", params![snapshot_id])?;
+        Ok(())
+    }
+
+    pub fn set_snapshot_pinned(&self, snapshot_id: &str, pinned: bool) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE snapshots SET pinned = ?1 WHERE id = ?2",
+            params![if pinned { 1 } else { 0 }, snapshot_id],
+        )?;
+        Ok(())
+    }
+
     pub fn get_snapshot(&self, snapshot_id: &str) -> SqlResult<Option<SnapshotRecord>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -433,10 +473,30 @@ impl Database {
                 is_active: active != 0,
             })
         })?;
-        rows.collect()
+        let mut profiles = rows.collect::<SqlResult<Vec<StorageProfile>>>()?;
+        drop(stmt);
+        let mut migrated = false;
+        for p in &mut profiles {
+            if p.secret_key.is_empty() {
+                p.secret_key = load_secret(&p.id);
+            } else if store_secret(&p.id, &p.secret_key).is_ok() {
+                // Migrate a pre-keychain plaintext secret. Kept in the DB if the keychain is unavailable.
+                conn.execute(
+                    "UPDATE storage_profiles SET secret_key = '' WHERE id = ?1",
+                    params![p.id],
+                )?;
+                migrated = true;
+            }
+        }
+        if migrated {
+            // Overwrite freed pages that still hold the old plaintext.
+            conn.execute_batch("VACUUM")?;
+        }
+        Ok(profiles)
     }
 
     pub fn upsert_storage_profile(&self, profile: &StorageProfile) -> SqlResult<()> {
+        store_secret(&profile.id, &profile.secret_key).map_err(keyring_err)?;
         let conn = self.conn.lock().unwrap();
         if profile.is_active {
             conn.execute("UPDATE storage_profiles SET is_active = 0", [])?;
@@ -464,7 +524,7 @@ impl Database {
                 profile.region,
                 profile.root_prefix,
                 profile.access_key,
-                profile.secret_key,
+                "",
                 if profile.is_active { 1 } else { 0 },
             ],
         )?;
@@ -531,5 +591,50 @@ mod tests {
         assert!(!loaded.close_to_tray);
         assert!(loaded.minimize_to_tray);
         assert!(!loaded.ask_on_close);
+    }
+
+    /// Touches the real OS keychain: `cargo test -- --ignored secret_lives_in_keychain`
+    #[test]
+    #[ignore]
+    fn secret_lives_in_keychain() {
+        let db = Database::open_in_memory().unwrap();
+        let id = format!("test-{}", uuid::Uuid::new_v4());
+        let mut p = StorageProfile {
+            id: id.clone(),
+            name: "t".into(),
+            provider_type: "vnsync_server".into(),
+            endpoint: String::new(),
+            bucket: String::new(),
+            region: String::new(),
+            root_prefix: String::new(),
+            access_key: String::new(),
+            secret_key: "hunter2".into(),
+            is_active: false,
+        };
+        let raw = |db: &Database| -> String {
+            db.conn
+                .lock()
+                .unwrap()
+                .query_row("SELECT secret_key FROM storage_profiles", [], |r| r.get(0))
+                .unwrap()
+        };
+
+        db.upsert_storage_profile(&p).unwrap();
+        assert_eq!(raw(&db), "");
+        assert_eq!(db.list_storage_profiles().unwrap()[0].secret_key, "hunter2");
+
+        // Legacy plaintext row migrates into the keychain on read.
+        db.conn
+            .lock()
+            .unwrap()
+            .execute("UPDATE storage_profiles SET secret_key = 'legacy'", [])
+            .unwrap();
+        assert_eq!(db.list_storage_profiles().unwrap()[0].secret_key, "legacy");
+        assert_eq!(raw(&db), "");
+        assert_eq!(load_secret(&id), "legacy");
+
+        p.secret_key.clear();
+        db.upsert_storage_profile(&p).unwrap();
+        assert_eq!(load_secret(&id), "");
     }
 }

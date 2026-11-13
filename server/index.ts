@@ -122,6 +122,14 @@ app.get("/api/games/:id/history", (event) =>
   readHistory(path.dirname(keyToPath(`games/${event.context.params!.id}/head.json`))).reverse(),
 );
 
+app.delete("/api/games/:id", (event) => {
+  fs.rmSync(path.dirname(keyToPath(`games/${event.context.params!.id}/head.json`)), {
+    recursive: true,
+    force: true,
+  });
+  return { ok: true };
+});
+
 if (import.meta.main) {
   serve(app, { port: Number(process.env.PORT) || 3000 });
 }

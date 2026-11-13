@@ -124,6 +124,11 @@ const navItems: NavigationMenuItem[][] = [
       to: "/add-game",
     },
     {
+      label: "Save Storage",
+      icon: "i-heroicons-circle-stack",
+      to: "/storage",
+    },
+    {
       label: "Cloud & Settings",
       icon: "i-heroicons-cog-6-tooth",
       to: "/settings",

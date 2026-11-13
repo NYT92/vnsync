@@ -47,6 +47,10 @@ cp .env.example .env   # set SECRET to a long random string
 npm start              # needs Node.js v24.2+
 ```
 
+Or deploy it to Railway in one click and use the `https://` URL it gives you:
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/6Ym7Dg?referralCode=nyt92railway&utm_medium=integration&utm_source=template&utm_campaign=generic)
+
 In the app: **Settings → Cloud & Storage Backend → VNSync Server (Self-Hosted)**, then enter the server URL (for example `http://192.168.1.10:3000`) and the `SECRET` as token.
 
 The token travels in a request header. Put the server behind an HTTPS reverse proxy before you expose it outside your home network.

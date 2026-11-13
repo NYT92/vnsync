@@ -577,18 +577,18 @@ const syncBadgeColor = (status: string) => {
             v-model="searchQuery"
             icon="i-heroicons-magnifying-glass"
             placeholder="Filter by title, developer, or engine..."
-            size="lg"
+            size="md"
             class="w-64 lg:w-80"
           />
         </template>
 
         <template #right>
-          <UFieldGroup size="lg">
+          <UFieldGroup size="md">
             <UButton
               v-for="filter in filterOptions"
               :key="filter"
               :label="filter"
-              size="lg"
+              size="md"
               :color="activeFilter === filter ? 'primary' : 'neutral'"
               :variant="activeFilter === filter ? 'subtle' : 'ghost'"
               @click="activeFilter = filter"
@@ -714,22 +714,22 @@ const syncBadgeColor = (status: string) => {
                 </div>
 
                 <div class="absolute bottom-2.5 left-3 right-3">
-                  <h3 class="text-sm font-bold text-white truncate">
+                  <h3 class="text-base font-bold text-white truncate">
                     {{ game.title }}
                   </h3>
-                  <p class="text-[11px] text-gray-300 truncate">
+                  <p class="text-xs text-gray-300 truncate">
                     {{ game.developer || 'Unknown Studio' }}
                   </p>
                 </div>
               </div>
 
               <div class="space-y-3">
-                <div class="flex items-center justify-between text-xs text-muted">
+                <div class="flex items-center justify-between text-sm text-muted">
                   <span class="flex items-center gap-1">
-                    <UIcon name="i-heroicons-clock" class="size-3.5" />
+                    <UIcon name="i-heroicons-clock" class="size-4" />
                     {{ formatPlaytime(game.playtimeSeconds) }}
                   </span>
-                  <UBadge :label="game.status" color="neutral" variant="subtle" size="lg" />
+                  <UBadge :label="game.status" color="neutral" variant="subtle" size="md" />
                 </div>
 
                 <UProgress :model-value="game.progress" size="xs" color="primary" />
@@ -742,7 +742,7 @@ const syncBadgeColor = (status: string) => {
                     :color="isGameRunning(game.id) ? 'success' : 'primary'"
                     :variant="isGameRunning(game.id) ? 'subtle' : 'solid'"
                     :loading="isGameRunning(game.id)"
-                    size="lg"
+                    size="md"
                     class="flex-1 justify-center"
                     :disabled="isGameRunning(game.id)"
                     @click="handleLaunch(game, $event)"
@@ -753,7 +753,7 @@ const syncBadgeColor = (status: string) => {
                     icon="i-heroicons-folder-open"
                     color="warning"
                     variant="subtle"
-                    size="lg"
+                    size="md"
                     class="flex-1 justify-center"
                     @click="handleLocateGame(game, true, $event)"
                   />
@@ -762,7 +762,7 @@ const syncBadgeColor = (status: string) => {
                       icon="i-heroicons-cloud-arrow-up"
                       color="neutral"
                       variant="subtle"
-                      size="lg"
+                      size="md"
                       :loading="syncingId === game.id"
                       @click="handleQuickSync(game, $event)"
                     />
@@ -772,7 +772,7 @@ const syncBadgeColor = (status: string) => {
                       icon="i-heroicons-pencil-square"
                       color="neutral"
                       variant="ghost"
-                      size="lg"
+                      size="md"
                       @click="openEditSlideover(game, $event)"
                     />
                   </UTooltip>
