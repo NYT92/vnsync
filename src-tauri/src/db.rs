@@ -5,10 +5,6 @@ use std::sync::Mutex;
 
 const KEYRING_SERVICE: &str = "vnsync";
 
-fn keyring_err(e: keyring::Error) -> rusqlite::Error {
-    rusqlite::Error::ToSqlConversionFailure(Box::new(e))
-}
-
 /// Secrets live in the OS keychain (Credential Manager / Keychain / Secret Service), never in SQLite.
 fn store_secret(profile_id: &str, secret: &str) -> Result<(), keyring::Error> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, profile_id)?;
@@ -496,7 +492,12 @@ impl Database {
     }
 
     pub fn upsert_storage_profile(&self, profile: &StorageProfile) -> SqlResult<()> {
-        store_secret(&profile.id, &profile.secret_key).map_err(keyring_err)?;
+        // No keychain (e.g. Linux without Secret Service): keep the secret in the DB, as
+        // list_storage_profiles already does for unmigrated rows; it migrates once a keychain exists.
+        let db_secret = match store_secret(&profile.id, &profile.secret_key) {
+            Ok(()) => "",
+            Err(_) => profile.secret_key.as_str(),
+        };
         let conn = self.conn.lock().unwrap();
         if profile.is_active {
             conn.execute("UPDATE storage_profiles SET is_active = 0", [])?;
@@ -524,7 +525,7 @@ impl Database {
                 profile.region,
                 profile.root_prefix,
                 profile.access_key,
-                "",
+                db_secret,
                 if profile.is_active { 1 } else { 0 },
             ],
         )?;
