@@ -23,6 +23,7 @@ const isEditOpen = ref(false)
 
 let unlistenStarted: UnlistenFn | null = null
 let unlistenExited: UnlistenFn | null = null
+let unlistenSync: UnlistenFn | null = null
 
 const isGameRunning = (id: string) => runningIds.value.has(id)
 const isExeReady = (game: Game) => Boolean(game.exePath && game.exeExists !== false)
@@ -71,6 +72,7 @@ onMounted(async () => {
       runningIds.value = next
       await loadGames()
     })
+    unlistenSync = await listen('sync:background', loadGames)
   } catch {
     // non-tauri preview fallback
   }
@@ -79,6 +81,7 @@ onMounted(async () => {
 onUnmounted(() => {
   unlistenStarted?.()
   unlistenExited?.()
+  unlistenSync?.()
 })
 
 const filteredGames = computed(() => {

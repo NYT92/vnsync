@@ -68,6 +68,34 @@ export interface AppSettings {
   closeToTray: boolean
   minimizeToTray: boolean
   askOnClose: boolean
+  syncOnAppOpen: boolean
+  backgroundSyncMinutes: number
+  launchOnStartup: boolean
+  startMinimized: boolean
+  lockIdleMinutes: number
+  lockBiometric: boolean
+}
+
+export interface LockStatus {
+  enabled: boolean
+  locked: boolean
+  idleMinutes: number
+  biometric: boolean
+}
+
+export interface ServerDevice {
+  id: string
+  name: string
+  os: string
+  createdAt: string
+  lastSeenAt: string
+  current: boolean
+}
+
+export interface BackgroundSyncReport {
+  changed: number
+  conflicts: string[]
+  errors: string[]
 }
 
 export interface DetectionResult {
@@ -323,6 +351,52 @@ export const VnSyncApi = {
   async quitApp(): Promise<void> {
     if (!isTauri()) return
     return invoke<void>('quit_app')
+  },
+
+  async getLockStatus(): Promise<LockStatus> {
+    if (!isTauri()) return { enabled: false, locked: false, idleMinutes: 0, biometric: false }
+    return invoke<LockStatus>('get_lock_status')
+  },
+
+  async isBiometricAvailable(): Promise<boolean> {
+    if (!isTauri()) return false
+    return invoke<boolean>('is_biometric_available')
+  },
+
+  async lockApp(): Promise<void> {
+    return invoke<void>('lock_app')
+  },
+
+  async unlockApp(pin: string): Promise<void> {
+    return invoke<void>('unlock_app', { pin })
+  },
+
+  async unlockAppBiometric(): Promise<void> {
+    return invoke<void>('unlock_app_biometric')
+  },
+
+  async setLockPin(currentPin: string, newPin: string): Promise<void> {
+    return invoke<void>('set_lock_pin', { currentPin, newPin })
+  },
+
+  async clearLockPin(currentPin: string): Promise<void> {
+    return invoke<void>('clear_lock_pin', { currentPin })
+  },
+
+  async serverSignIn(profile: StorageProfile, password: string): Promise<StorageProfile> {
+    return invoke<StorageProfile>('server_sign_in_device', { profile, password })
+  },
+
+  async serverSignOut(): Promise<StorageProfile> {
+    return invoke<StorageProfile>('server_sign_out_device')
+  },
+
+  async serverGetDevices(): Promise<ServerDevice[]> {
+    return invoke<ServerDevice[]>('server_get_devices')
+  },
+
+  async serverRemoveDevice(deviceId: string): Promise<void> {
+    return invoke<void>('server_remove_device', { deviceId })
   }
 }
 

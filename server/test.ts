@@ -53,3 +53,37 @@ test("head compare-and-swap, history, retention", async () => {
   assert.equal((await call("GET", HEAD)).status, 404);
   assert.deepEqual(await (await call("GET", "/api/games/g1/history")).json(), []);
 });
+
+test("device sessions: sign in, use, list, revoke", async () => {
+  const signIn = (deviceId: string) =>
+    call("POST", "/api/sessions", JSON.stringify({ deviceId, deviceName: "PC", os: "windows" }), {
+      "content-type": "application/json",
+    });
+  const tokenA = (await (await signIn("dev-a")).json()).token;
+  const tokenB = (await (await signIn("dev-b")).json()).token;
+  const asA = { authorization: `Bearer ${tokenA}` };
+  const asB = { authorization: `Bearer ${tokenB}` };
+
+  assert.equal((await app.request("/api/ping", { headers: asA })).status, 200);
+  // A device token cannot mint more tokens.
+  const mint = await app.request("/api/sessions", { method: "POST", headers: asA, body: "{}" });
+  assert.equal(mint.status, 403);
+  // Device state is not reachable through the blob API.
+  assert.equal((await call("GET", "/api/blob/_server/devices.json")).status, 400);
+
+  const list = await (await app.request("/api/sessions", { headers: asA })).json();
+  assert.deepEqual(list.map((d: any) => [d.id, d.current]), [["dev-a", true], ["dev-b", false]]);
+  assert.ok(list.every((d: any) => !("tokenHash" in d)));
+
+  // A revokes B; B is locked out, A keeps working.
+  await app.request("/api/sessions/dev-b", { method: "DELETE", headers: asA });
+  assert.equal((await app.request("/api/ping", { headers: asB })).status, 401);
+  assert.equal((await app.request("/api/ping", { headers: asA })).status, 200);
+
+  // Signing in again replaces the old token.
+  const tokenA2 = (await (await signIn("dev-a")).json()).token;
+  assert.equal((await app.request("/api/ping", { headers: asA })).status, 401);
+  const asA2 = { authorization: `Bearer ${tokenA2}` };
+  assert.equal((await app.request("/api/ping", { headers: asA2 })).status, 200);
+  assert.equal((await signIn("bad id!")).status, 400);
+});

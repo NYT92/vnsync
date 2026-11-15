@@ -1,10 +1,12 @@
 pub mod db;
+pub mod lock;
 pub mod metadata;
 pub mod resolver;
 pub mod snapshot;
 pub mod sync;
 
 use db::{AppSettings, Database, Game, SnapshotRecord, StorageProfile};
+use lock::LockState;
 use metadata::{search_vndb, VndbResult};
 use resolver::{
     detect_game_from_exe_with_db, get_active_save_locations, locate_game_executable,
@@ -17,20 +19,29 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use sync::{
     build_library_catalog, delete_cloud_game_data, heal_library_paths, list_cloud_snapshots,
     merge_library_catalog, parse_library_catalog_json, restore_as_new_snapshot,
-    restore_cloud_snapshot, sync_game, sync_library_catalog, test_storage_connection,
-    LibrarySyncOutcome, RemoteGameHead, SyncOutcome,
+    restore_cloud_snapshot, server_list_devices, server_revoke_device, server_sign_in, sync_game,
+    sync_library_catalog, test_storage_connection, LibrarySyncOutcome, RemoteGameHead,
+    ServerDevice, SyncOutcome,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_autostart::ManagerExt;
+
+/// Passed by the OS autostart entry, so the app can start hidden in the tray.
+const AUTOSTART_ARG: &str = "--autostart";
 
 pub struct AppState {
     pub db: Arc<Database>,
     pub app_data_dir: PathBuf,
     pub vault_dir: PathBuf,
     pub running_games: Arc<Mutex<HashSet<String>>>,
+    pub lock: Mutex<LockState>,
+    /// Serializes manual, pre-launch and background syncs.
+    // ponytail: one global lock; a long background pass delays a manual sync. Per-game locks if that hurts.
+    pub sync_lock: tokio::sync::Mutex<()>,
 }
 
 #[tauri::command]
@@ -111,6 +122,7 @@ async fn sync_library_now(
     state: State<'_, AppState>,
     direction: Option<String>,
 ) -> Result<LibrarySyncOutcome, String> {
+    let _guard = state.sync_lock.lock().await;
     sync_library_catalog(&state.db, direction.as_deref()).await
 }
 
@@ -433,6 +445,7 @@ async fn sync_game_now(
     game_id: String,
     force_direction: Option<String>,
 ) -> Result<SyncOutcome, String> {
+    let _guard = state.sync_lock.lock().await;
     sync_game(
         &state.db,
         &state.vault_dir,
@@ -474,6 +487,7 @@ fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
 
 #[tauri::command]
 fn save_app_settings(
+    app: AppHandle,
     state: State<'_, AppState>,
     settings: AppSettings,
 ) -> Result<AppSettings, String> {
@@ -481,7 +495,259 @@ fn save_app_settings(
         .db
         .save_settings(&settings)
         .map_err(|e| e.to_string())?;
+    let autostart = app.autolaunch();
+    if autostart.is_enabled().unwrap_or(false) != settings.launch_on_startup {
+        if settings.launch_on_startup {
+            autostart.enable()
+        } else {
+            autostart.disable()
+        }
+        .map_err(|e| format!("Settings saved, but launch on startup failed: {}", e))?;
+    }
     Ok(settings)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LockStatus {
+    enabled: bool,
+    locked: bool,
+    idle_minutes: u32,
+    biometric: bool,
+}
+
+#[tauri::command]
+fn get_lock_status(state: State<'_, AppState>) -> Result<LockStatus, String> {
+    let settings = state.db.get_settings().map_err(|e| e.to_string())?;
+    Ok(LockStatus {
+        enabled: !state.db.get_lock_pin_hash().is_empty(),
+        locked: state.lock.lock().map_err(|e| e.to_string())?.locked,
+        idle_minutes: settings.lock_idle_minutes,
+        biometric: settings.lock_biometric,
+    })
+}
+
+#[tauri::command]
+async fn is_biometric_available() -> bool {
+    tokio::task::spawn_blocking(lock::biometric_available)
+        .await
+        .unwrap_or(false)
+}
+
+fn set_locked(app: &AppHandle, state: &AppState, locked: bool) -> Result<(), String> {
+    state.lock.lock().map_err(|e| e.to_string())?.locked = locked;
+    let _ = app.emit("lock:changed", locked);
+    Ok(())
+}
+
+#[tauri::command]
+fn lock_app(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    if state.db.get_lock_pin_hash().is_empty() {
+        return Err("Set a PIN first".to_string());
+    }
+    set_locked(&app, &state, true)
+}
+
+#[tauri::command]
+fn unlock_app(app: AppHandle, state: State<'_, AppState>, pin: String) -> Result<(), String> {
+    let stored = state.db.get_lock_pin_hash();
+    state
+        .lock
+        .lock()
+        .map_err(|e| e.to_string())?
+        .try_unlock(&stored, &pin)?;
+    let _ = app.emit("lock:changed", false);
+    Ok(())
+}
+
+#[tauri::command]
+async fn unlock_app_biometric(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let settings = state.db.get_settings().map_err(|e| e.to_string())?;
+    if !settings.lock_biometric {
+        return Err("Biometric unlock is turned off".to_string());
+    }
+    tokio::task::spawn_blocking(|| lock::biometric_verify("Unlock VNSync"))
+        .await
+        .map_err(|e| e.to_string())??;
+    set_locked(&app, &state, false)
+}
+
+/// Sets or changes the PIN. Changing an existing PIN needs the current one.
+#[tauri::command]
+fn set_lock_pin(
+    state: State<'_, AppState>,
+    current_pin: String,
+    new_pin: String,
+) -> Result<(), String> {
+    let stored = state.db.get_lock_pin_hash();
+    if !stored.is_empty() && !lock::verify_pin(&stored, &current_pin) {
+        return Err("Current PIN is wrong".to_string());
+    }
+    lock::validate_pin(&new_pin)?;
+    state
+        .db
+        .set_lock_pin_hash(&lock::hash_pin(&new_pin))
+        .map_err(|e| e.to_string())
+}
+
+/// Turns the app lock off.
+#[tauri::command]
+fn clear_lock_pin(state: State<'_, AppState>, current_pin: String) -> Result<(), String> {
+    let stored = state.db.get_lock_pin_hash();
+    if !stored.is_empty() && !lock::verify_pin(&stored, &current_pin) {
+        return Err("Current PIN is wrong".to_string());
+    }
+    state.db.set_lock_pin_hash("").map_err(|e| e.to_string())
+}
+
+fn active_server_profile(db: &Database) -> Result<StorageProfile, String> {
+    db.get_active_storage_profile()
+        .map_err(|e| e.to_string())?
+        .filter(|p| p.provider_type == "vnsync_server")
+        .ok_or_else(|| "Active storage profile is not a VNSync server".to_string())
+}
+
+/// Signs this PC in to a VNSync server and saves the device token as the active profile.
+#[tauri::command]
+async fn server_sign_in_device(
+    state: State<'_, AppState>,
+    mut profile: StorageProfile,
+    password: String,
+) -> Result<StorageProfile, String> {
+    if profile.provider_type != "vnsync_server" {
+        return Err("Profile is not a VNSync server".to_string());
+    }
+    let settings = state.db.get_settings().map_err(|e| e.to_string())?;
+    profile.secret_key = server_sign_in(
+        &profile,
+        &password,
+        &settings.device_id,
+        &settings.device_name,
+    )
+    .await?;
+    if profile.id.trim().is_empty() {
+        profile.id = uuid::Uuid::new_v4().to_string();
+    }
+    profile.is_active = true;
+    state
+        .db
+        .upsert_storage_profile(&profile)
+        .map_err(|e| e.to_string())?;
+    Ok(profile)
+}
+
+/// Signs this PC out: revokes its token on the server (best effort) and forgets it locally.
+#[tauri::command]
+async fn server_sign_out_device(state: State<'_, AppState>) -> Result<StorageProfile, String> {
+    let mut profile = active_server_profile(&state.db)?;
+    let settings = state.db.get_settings().map_err(|e| e.to_string())?;
+    let _ = server_revoke_device(&profile, &settings.device_id).await;
+    profile.secret_key.clear();
+    state
+        .db
+        .upsert_storage_profile(&profile)
+        .map_err(|e| e.to_string())?;
+    Ok(profile)
+}
+
+#[tauri::command]
+async fn server_get_devices(state: State<'_, AppState>) -> Result<Vec<ServerDevice>, String> {
+    server_list_devices(&active_server_profile(&state.db)?).await
+}
+
+#[tauri::command]
+async fn server_remove_device(state: State<'_, AppState>, device_id: String) -> Result<(), String> {
+    server_revoke_device(&active_server_profile(&state.db)?, &device_id).await
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BackgroundSyncReport {
+    changed: usize,
+    conflicts: Vec<String>,
+    errors: Vec<String>,
+}
+
+/// Syncs the library catalog and every game that is not running.
+async fn background_sync_pass(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    if !matches!(state.db.get_active_storage_profile(), Ok(Some(_))) {
+        return;
+    }
+    let _guard = state.sync_lock.lock().await;
+    let mut report = BackgroundSyncReport {
+        changed: 0,
+        conflicts: Vec::new(),
+        errors: Vec::new(),
+    };
+    if let Err(e) = sync_library_catalog(&state.db, None).await {
+        report.errors.push(format!("Library: {}", e));
+    }
+    let running = state
+        .running_games
+        .lock()
+        .map(|r| r.clone())
+        .unwrap_or_default();
+    for game in state.db.list_games().unwrap_or_default() {
+        // A pull rewrites save files, so never touch a game that is open.
+        if running.contains(&game.id) || game.save_paths.is_empty() {
+            continue;
+        }
+        match sync_game(&state.db, &state.vault_dir, &game.id, None).await {
+            // Report a conflict once, not on every pass.
+            Ok(o) if o.action == "conflict" => {
+                if game.sync_status != "Conflict" {
+                    report.conflicts.push(game.title);
+                }
+            }
+            Ok(o) if o.action != "up_to_date" => report.changed += 1,
+            Ok(_) => {}
+            Err(e) => report.errors.push(format!("{}: {}", game.title, e)),
+        }
+    }
+    if !report.conflicts.is_empty() {
+        use tauri_plugin_notification::NotificationExt;
+        let _ = app
+            .notification()
+            .builder()
+            .title("VNSync: save conflict")
+            .body(format!(
+                "Open VNSync to choose which saves to keep: {}",
+                report.conflicts.join(", ")
+            ))
+            .show();
+    }
+    let _ = app.emit("sync:background", report);
+}
+
+/// Runs a sync when the app opens (if enabled), then every `background_sync_minutes`.
+/// Settings are re-read every tick, so changes apply without a restart.
+fn spawn_background_sync(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let sync_on_open = app
+            .state::<AppState>()
+            .db
+            .get_settings()
+            .map(|s| s.sync_on_app_open)
+            .unwrap_or(false);
+        if sync_on_open {
+            background_sync_pass(&app).await;
+        }
+        let mut last_run = Instant::now();
+        loop {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            let minutes = app
+                .state::<AppState>()
+                .db
+                .get_settings()
+                .map(|s| s.background_sync_minutes)
+                .unwrap_or(0);
+            if minutes > 0 && last_run.elapsed() >= Duration::from_secs(u64::from(minutes) * 60) {
+                background_sync_pass(&app).await;
+                last_run = Instant::now();
+            }
+        }
+    });
 }
 
 #[tauri::command]
@@ -548,6 +814,7 @@ async fn launch_game(
     // Optional pre-launch sync
     if settings.auto_sync_on_launch {
         if let Ok(Some(_)) = state.db.get_active_storage_profile() {
+            let _guard = state.sync_lock.lock().await;
             let _ = sync_game(&state.db, &state.vault_dir, &game_id, None).await;
         }
     }
@@ -625,6 +892,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![AUTOSTART_ARG]),
+        ))
         .setup(|app| {
             let app_data_dir = app
                 .path()
@@ -662,12 +933,27 @@ pub fn run() {
             let default_json_copy = app_data_dir.join("default_save_locations.json");
             let _ = std::fs::write(&default_json_copy, DEFAULT_SAVE_LOCATIONS_JSON);
 
+            let locked_at_start = !db.get_lock_pin_hash().is_empty();
+            let start_hidden = std::env::args().any(|a| a == AUTOSTART_ARG)
+                && db
+                    .get_settings()
+                    .map(|s| s.start_minimized)
+                    .unwrap_or(false);
+
             app.manage(AppState {
                 db: Arc::new(db),
                 app_data_dir,
                 vault_dir,
                 running_games: Arc::new(Mutex::new(HashSet::new())),
+                lock: Mutex::new(LockState::new(locked_at_start)),
+                sync_lock: tokio::sync::Mutex::new(()),
             });
+
+            // The window starts hidden (tauri.conf.json) so autostart can stay in the tray.
+            if !start_hidden {
+                show_main_window(app.handle());
+            }
+            spawn_background_sync(app.handle().clone());
 
             #[cfg(desktop)]
             {
@@ -769,6 +1055,17 @@ pub fn run() {
             launch_game,
             hide_to_tray,
             quit_app,
+            get_lock_status,
+            is_biometric_available,
+            lock_app,
+            unlock_app,
+            unlock_app_biometric,
+            set_lock_pin,
+            clear_lock_pin,
+            server_sign_in_device,
+            server_sign_out_device,
+            server_get_devices,
+            server_remove_device,
         ])
         .run(tauri::generate_context!())
         .expect("error while running VNSync tauri application");

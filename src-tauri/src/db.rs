@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 const KEYRING_SERVICE: &str = "vnsync";
+const LOCK_PIN_ENTRY: &str = "app-lock-pin";
 
 /// Secrets live in the OS keychain (Credential Manager / Keychain / Secret Service), never in SQLite.
 fn store_secret(profile_id: &str, secret: &str) -> Result<(), keyring::Error> {
@@ -108,6 +109,26 @@ pub struct AppSettings {
     pub minimize_to_tray: bool,
     #[serde(default = "default_true")]
     pub ask_on_close: bool,
+    /// Sync every game and the library once when the app starts.
+    #[serde(default = "default_true")]
+    pub sync_on_app_open: bool,
+    /// Background sync interval in minutes; 0 turns it off.
+    #[serde(default)]
+    pub background_sync_minutes: u32,
+    #[serde(default)]
+    pub launch_on_startup: bool,
+    /// When started by the OS at login, stay hidden in the tray.
+    #[serde(default = "default_true")]
+    pub start_minimized: bool,
+    /// Lock after this many idle minutes; 0 locks only on startup. Lock is on when a PIN is set.
+    #[serde(default = "default_lock_idle")]
+    pub lock_idle_minutes: u32,
+    #[serde(default)]
+    pub lock_biometric: bool,
+}
+
+fn default_lock_idle() -> u32 {
+    5
 }
 
 impl Default for AppSettings {
@@ -130,6 +151,12 @@ impl Default for AppSettings {
             close_to_tray: true,
             minimize_to_tray: false,
             ask_on_close: true,
+            sync_on_app_open: true,
+            background_sync_minutes: 0,
+            launch_on_startup: false,
+            start_minimized: true,
+            lock_idle_minutes: default_lock_idle(),
+            lock_biometric: false,
         }
     }
 }
@@ -558,6 +585,41 @@ impl Database {
             params![json_str],
         )?;
         Ok(default)
+    }
+
+    /// App-lock PIN hash: OS keychain first, settings table when no keychain exists
+    /// (same fallback as storage profile secrets). Empty string clears it.
+    pub fn set_lock_pin_hash(&self, hash: &str) -> SqlResult<()> {
+        let db_value = match store_secret(LOCK_PIN_ENTRY, hash) {
+            Ok(()) => "",
+            Err(_) => hash,
+        };
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value_json) VALUES ('lock_pin', ?1)",
+            params![serde_json::to_string(db_value).unwrap_or_default()],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_lock_pin_hash(&self) -> String {
+        let from_db: String = self
+            .conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT value_json FROM settings WHERE key = 'lock_pin'",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|v| serde_json::from_str(&v).ok())
+            .unwrap_or_default();
+        if from_db.is_empty() {
+            load_secret(LOCK_PIN_ENTRY)
+        } else {
+            from_db
+        }
     }
 
     pub fn save_settings(&self, settings: &AppSettings) -> SqlResult<()> {

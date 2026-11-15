@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import type { TabsItem } from '@nuxt/ui'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
   VnSyncApi,
   type AppSettings,
+  type ServerDevice,
   type StorageProfile
 } from '@/services/vnsyncApi'
 
@@ -20,6 +21,11 @@ const tabItems: TabsItem[] = [
     label: 'Device & Auto-Sync',
     icon: 'i-heroicons-cpu-chip',
     slot: 'automation'
+  },
+  {
+    label: 'Security',
+    icon: 'i-heroicons-lock-closed',
+    slot: 'security'
   }
 ]
 
@@ -37,8 +43,32 @@ const settings = ref<AppSettings>({
   gameLibraryPath: '',
   closeToTray: true,
   minimizeToTray: false,
-  askOnClose: true
+  askOnClose: true,
+  syncOnAppOpen: true,
+  backgroundSyncMinutes: 0,
+  launchOnStartup: false,
+  startMinimized: true,
+  lockIdleMinutes: 5,
+  lockBiometric: false
 })
+
+const backgroundSyncOptions = [
+  { label: 'Off', value: 0 },
+  { label: 'Every 5 minutes', value: 5 },
+  { label: 'Every 15 minutes', value: 15 },
+  { label: 'Every 30 minutes', value: 30 },
+  { label: 'Every hour', value: 60 },
+  { label: 'Every 3 hours', value: 180 }
+]
+
+const lockIdleOptions = [
+  { label: 'Only when the app starts', value: 0 },
+  { label: 'After 1 minute idle', value: 1 },
+  { label: 'After 5 minutes idle', value: 5 },
+  { label: 'After 15 minutes idle', value: 15 },
+  { label: 'After 30 minutes idle', value: 30 },
+  { label: 'After 1 hour idle', value: 60 }
+]
 
 const activeProfile = ref<StorageProfile>({
   id: 'default-storage',
@@ -63,7 +93,121 @@ const providerOptions = [
 const isSaving = ref(false)
 const isTesting = ref(false)
 
+const errorToast = (title: string, err: unknown) => {
+  toast.add({ title, description: String(err), color: 'error', icon: 'i-heroicons-exclamation-circle' })
+}
+
+// VNSync server sign-in. The server password is sent once to get a device token, never stored.
+const serverPassword = ref('')
+const isSigningIn = ref(false)
+const devices = ref<ServerDevice[]>([])
+const signedIn = computed(() => !!activeProfile.value.secretKey)
+const thisDeviceListed = computed(() => devices.value.some(d => d.current))
+
+const loadDevices = async () => {
+  if (activeProfile.value.providerType !== 'vnsync_server' || !signedIn.value) return
+  try {
+    devices.value = await VnSyncApi.serverGetDevices()
+  } catch (err) {
+    devices.value = []
+    errorToast('Could not load devices', err)
+  }
+}
+
+const handleServerSignIn = async () => {
+  isSigningIn.value = true
+  try {
+    await VnSyncApi.saveAppSettings(settings.value) // the server shows this device name
+    activeProfile.value = await VnSyncApi.serverSignIn(activeProfile.value, serverPassword.value)
+    serverPassword.value = ''
+    toast.add({
+      title: 'Signed in',
+      description: `${settings.value.deviceName} is now registered on the server.`,
+      color: 'success',
+      icon: 'i-heroicons-check-circle'
+    })
+    await loadDevices()
+  } catch (err) {
+    errorToast('Sign in failed', err)
+  } finally {
+    isSigningIn.value = false
+  }
+}
+
+const handleServerSignOut = async () => {
+  try {
+    activeProfile.value = await VnSyncApi.serverSignOut()
+    devices.value = []
+  } catch (err) {
+    errorToast('Sign out failed', err)
+  }
+}
+
+const handleRemoveDevice = async (device: ServerDevice) => {
+  if (device.current) return handleServerSignOut()
+  try {
+    await VnSyncApi.serverRemoveDevice(device.id)
+    await loadDevices()
+  } catch (err) {
+    errorToast('Could not sign out device', err)
+  }
+}
+
+const formatDate = (iso: string) => new Date(iso).toLocaleString()
+
+// App lock PIN. PIN changes apply at once; idle time and biometric save with the preferences.
+const lockEnabled = ref(false)
+const biometricAvailable = ref(false)
+const currentPin = ref('')
+const newPin = ref('')
+const confirmPin = ref('')
+const isSavingPin = ref(false)
+
+const refreshLock = async () => {
+  lockEnabled.value = (await VnSyncApi.getLockStatus()).enabled
+}
+
+const handleSetPin = async () => {
+  if (newPin.value !== confirmPin.value) {
+    return errorToast('PIN not saved', 'The new PINs do not match')
+  }
+  isSavingPin.value = true
+  try {
+    await VnSyncApi.setLockPin(currentPin.value, newPin.value)
+    toast.add({
+      title: lockEnabled.value ? 'PIN changed' : 'App lock turned on',
+      color: 'success',
+      icon: 'i-heroicons-lock-closed'
+    })
+    currentPin.value = newPin.value = confirmPin.value = ''
+    await refreshLock()
+  } catch (err) {
+    errorToast('PIN not saved', err)
+  } finally {
+    isSavingPin.value = false
+  }
+}
+
+const handleClearPin = async () => {
+  try {
+    await VnSyncApi.clearLockPin(currentPin.value)
+    currentPin.value = ''
+    toast.add({ title: 'App lock turned off', color: 'neutral', icon: 'i-heroicons-lock-open' })
+    await refreshLock()
+  } catch (err) {
+    errorToast('App lock not turned off', err)
+  }
+}
+
+const handleLockNow = () => VnSyncApi.lockApp().catch(err => errorToast('Could not lock', err))
+
 onMounted(async () => {
+  try {
+    await refreshLock()
+    biometricAvailable.value = await VnSyncApi.isBiometricAvailable()
+  } catch (err) {
+    console.error('Failed loading lock status:', err)
+  }
   try {
     const loadedSettings = await VnSyncApi.getAppSettings()
     if (loadedSettings) {
@@ -74,6 +218,7 @@ onMounted(async () => {
     if (current) {
       activeProfile.value = current
     }
+    await loadDevices()
   } catch (err) {
     console.error('Failed loading settings:', err)
   }
@@ -360,14 +505,96 @@ const handleSaveAll = async () => {
                     />
                   </UFormField>
 
-                  <UFormField label="Token" help="The SECRET value from the server's .env file.">
-                    <UInput
-                      v-model="activeProfile.secretKey"
-                      type="password"
+                  <UFormField
+                    v-if="!signedIn"
+                    label="Server Password"
+                    help="The SECRET value from the server's .env file. Used once to sign in, not stored."
+                  >
+                    <UFieldGroup class="w-full" size="md">
+                      <UInput
+                        v-model="serverPassword"
+                        type="password"
+                        size="md"
+                        class="flex-1"
+                        @keydown.enter="handleServerSignIn"
+                      />
+                      <UButton
+                        label="Sign In"
+                        icon="i-heroicons-arrow-right-end-on-rectangle"
+                        color="primary"
+                        size="md"
+                        :loading="isSigningIn"
+                        :disabled="!serverPassword || !activeProfile.endpoint"
+                        @click="handleServerSignIn"
+                      />
+                    </UFieldGroup>
+                  </UFormField>
+
+                  <UFormField v-else label="Session" help="This PC is signed in with its own device token.">
+                    <UButton
+                      label="Sign Out This PC"
+                      icon="i-heroicons-arrow-left-start-on-rectangle"
+                      color="error"
+                      variant="subtle"
                       size="md"
-                      class="w-full"
+                      @click="handleServerSignOut"
                     />
                   </UFormField>
+
+                  <div v-if="signedIn" class="lg:col-span-2 space-y-2">
+                    <div class="flex items-center justify-between">
+                      <h3 class="text-xs font-semibold text-highlighted">Signed-In Devices</h3>
+                      <UButton
+                        label="Refresh"
+                        icon="i-heroicons-arrow-path"
+                        color="neutral"
+                        variant="ghost"
+                        size="xs"
+                        @click="loadDevices"
+                      />
+                    </div>
+                    <p v-if="devices.length && !thisDeviceListed" class="text-xs text-warning">
+                      This PC uses the server password directly, so it is not listed.
+                      Sign out and sign in again to register it.
+                    </p>
+                    <ul class="divide-y divide-default rounded-md border border-default">
+                      <li
+                        v-for="device in devices"
+                        :key="device.id"
+                        class="flex items-center justify-between gap-3 px-3 py-2"
+                      >
+                        <div class="flex items-center gap-2 min-w-0">
+                          <UIcon name="i-heroicons-computer-desktop" class="size-4 text-muted shrink-0" />
+                          <div class="min-w-0">
+                            <p class="text-sm text-highlighted truncate">
+                              {{ device.name }}
+                              <UBadge
+                                v-if="device.current"
+                                label="This PC"
+                                size="sm"
+                                variant="subtle"
+                                class="ml-1"
+                              />
+                            </p>
+                            <p class="text-[11px] text-muted truncate">
+                              {{ device.os || 'Unknown OS' }} · signed in {{ formatDate(device.createdAt) }}
+                              · last seen {{ formatDate(device.lastSeenAt) }}
+                            </p>
+                          </div>
+                        </div>
+                        <UButton
+                          label="Sign Out"
+                          color="error"
+                          variant="ghost"
+                          size="xs"
+                          @click="handleRemoveDevice(device)"
+                        />
+                      </li>
+                      <li v-if="!devices.length" class="px-3 py-2 text-xs text-muted">
+                        No devices found.
+                      </li>
+                    </ul>
+                  </div>
                 </div>
 
                 <!-- Local / Shared Folder Config -->
@@ -501,20 +728,55 @@ const handleSaveAll = async () => {
                 <div class="space-y-4">
                   <USwitch
                     v-model="settings.autoSyncOnLaunch"
-                    label="Pull latest saves on Game Launch"
-                    description="Automatically check active storage and fast-forward pull newer saves before starting the game executable."
+                    label="Sync before Game Launch"
+                    description="Before starting a game, check active storage and fast-forward pull newer saves."
                   />
 
                   <USwitch
                     v-model="settings.autoSyncOnExit"
-                    label="Snapshot & Push on Game Exit"
-                    description="Wait for the game process to close, pack changed saves into a .tar.zst snapshot, and upload."
+                    label="Snapshot on Game Exit"
+                    description="When the game closes, pack changed saves into a local .tar.zst snapshot. It uploads on the next sync."
                   />
 
                   <USwitch
                     v-model="settings.backupBeforeSync"
                     label="Pre-Restore Safety Vault Backup"
                     description="Always create a local snapshot before overwriting local files during a pull or manual restore."
+                  />
+                </div>
+
+                <USeparator label="App Sync & Startup" />
+
+                <div class="space-y-4">
+                  <USwitch
+                    v-model="settings.syncOnAppOpen"
+                    label="Sync When VNSync Opens"
+                    description="Sync the library and every game once when the app starts."
+                  />
+
+                  <UFormField
+                    label="Background Sync"
+                    description="Keep syncing while VNSync runs, also when hidden in the tray. Running games are skipped."
+                  >
+                    <USelect
+                      v-model="settings.backgroundSyncMinutes"
+                      :items="backgroundSyncOptions"
+                      size="md"
+                      class="w-64"
+                    />
+                  </UFormField>
+
+                  <USwitch
+                    v-model="settings.launchOnStartup"
+                    label="Launch VNSync on System Startup"
+                    description="Start VNSync automatically when you sign in to your computer."
+                  />
+
+                  <USwitch
+                    v-model="settings.startMinimized"
+                    :disabled="!settings.launchOnStartup"
+                    label="Start Hidden in System Tray"
+                    description="When started at sign-in, stay in the tray instead of opening the window."
                   />
                 </div>
 
@@ -539,6 +801,126 @@ const handleSaveAll = async () => {
                     description="Hide the window to the system tray instead of the taskbar when minimizing."
                   />
                 </div>
+              </div>
+
+              <template #footer>
+                <div class="flex justify-end">
+                  <UButton
+                    label="Save Preferences"
+                    icon="i-heroicons-check"
+                    color="primary"
+                    size="md"
+                    :loading="isSaving"
+                    @click="handleSaveAll"
+                  />
+                </div>
+              </template>
+            </UCard>
+          </template>
+
+          <!-- Tab 3: App Lock -->
+          <template #security>
+            <UCard variant="outline" class="mt-4">
+              <template #header>
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h2 class="text-sm font-semibold text-highlighted">App Lock</h2>
+                    <p class="text-xs text-muted">
+                      Ask for a PIN when VNSync starts and after it sits idle.
+                    </p>
+                  </div>
+                  <UBadge
+                    :label="lockEnabled ? 'ON' : 'OFF'"
+                    :color="lockEnabled ? 'success' : 'neutral'"
+                    variant="subtle"
+                    size="sm"
+                  />
+                </div>
+              </template>
+
+              <div class="space-y-5">
+                <form class="grid grid-cols-1 lg:grid-cols-3 gap-4" @submit.prevent="handleSetPin">
+                  <UFormField v-if="lockEnabled" label="Current PIN">
+                    <UInput
+                      v-model="currentPin"
+                      type="password"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      size="md"
+                      class="w-full"
+                    />
+                  </UFormField>
+                  <UFormField :label="lockEnabled ? 'New PIN' : 'PIN'" help="4 to 12 digits.">
+                    <UInput
+                      v-model="newPin"
+                      type="password"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      size="md"
+                      class="w-full"
+                    />
+                  </UFormField>
+                  <UFormField label="Confirm PIN">
+                    <UInput
+                      v-model="confirmPin"
+                      type="password"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      size="md"
+                      class="w-full"
+                    />
+                  </UFormField>
+                  <div class="lg:col-span-3 flex flex-wrap gap-2">
+                    <UButton
+                      type="submit"
+                      :label="lockEnabled ? 'Change PIN' : 'Turn On App Lock'"
+                      icon="i-heroicons-lock-closed"
+                      color="primary"
+                      size="md"
+                      :loading="isSavingPin"
+                      :disabled="!newPin || !confirmPin"
+                    />
+                    <UButton
+                      v-if="lockEnabled"
+                      label="Turn Off App Lock"
+                      icon="i-heroicons-lock-open"
+                      color="error"
+                      variant="subtle"
+                      size="md"
+                      :disabled="!currentPin"
+                      @click="handleClearPin"
+                    />
+                    <UButton
+                      v-if="lockEnabled"
+                      label="Lock Now"
+                      icon="i-heroicons-lock-closed"
+                      color="neutral"
+                      variant="subtle"
+                      size="md"
+                      @click="handleLockNow"
+                    />
+                  </div>
+                </form>
+
+                <USeparator />
+
+                <UFormField label="Auto-Lock" description="VNSync always locks when it starts.">
+                  <USelect
+                    v-model="settings.lockIdleMinutes"
+                    :items="lockIdleOptions"
+                    size="md"
+                    class="w-64"
+                  />
+                </UFormField>
+
+                <USwitch
+                  v-model="settings.lockBiometric"
+                  :disabled="!biometricAvailable"
+                  label="Unlock with Windows Hello"
+                  :description="biometricAvailable
+                    ? 'Use fingerprint, face or your Windows PIN. The VNSync PIN always works too.'
+                    : 'Not available on this device. Only Windows with Windows Hello set up is supported.'"
+                />
               </div>
 
               <template #footer>

@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { getVersion } from "@tauri-apps/api/app";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { NavigationMenuItem, ContextMenuItem } from "@nuxt/ui";
 
 import TitleBar from "./components/TitleBar.vue";
 import AppLogo from "./components/AppLogo.vue";
-import { VnSyncApi } from "./services/vnsyncApi";
+import LockScreen from "./components/LockScreen.vue";
+import { VnSyncApi, type BackgroundSyncReport, type LockStatus } from "./services/vnsyncApi";
 import { WindowService } from "./services/windowService";
 
 const router = useRouter();
@@ -111,6 +113,84 @@ onMounted(async () => {
   }
 });
 
+// App lock. The locked flag lives in Rust; this only mirrors it and tracks idle time.
+const toast = useToast();
+const lockStatus = ref<LockStatus | null>(null);
+const locked = computed(() => lockStatus.value?.locked ?? false);
+let lastActivity = Date.now();
+let idleTimer: ReturnType<typeof setInterval> | undefined;
+const unlisteners: UnlistenFn[] = [];
+
+const refreshLockStatus = async () => {
+  try {
+    lockStatus.value = await VnSyncApi.getLockStatus();
+  } catch {
+    // not running inside Tauri
+  }
+};
+
+const idleExpired = () => {
+  const s = lockStatus.value;
+  return (
+    !!s?.enabled &&
+    !s.locked &&
+    s.idleMinutes > 0 &&
+    Date.now() - lastActivity > s.idleMinutes * 60_000
+  );
+};
+
+const checkIdle = async () => {
+  if (idleExpired()) await VnSyncApi.lockApp().catch(() => {});
+};
+
+// Checked before recording activity, so coming back after a long break locks first.
+const onActivity = () => {
+  if (idleExpired()) void checkIdle();
+  else lastActivity = Date.now();
+};
+const activityEvents = ["mousemove", "mousedown", "keydown", "wheel", "touchstart"];
+
+onMounted(async () => {
+  await refreshLockStatus();
+  activityEvents.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
+  idleTimer = setInterval(async () => {
+    await refreshLockStatus();
+    await checkIdle();
+  }, 15_000);
+  try {
+    unlisteners.push(
+      await listen<boolean>("lock:changed", async () => {
+        lastActivity = Date.now();
+        await refreshLockStatus();
+      }),
+      await listen<BackgroundSyncReport>("sync:background", ({ payload }) => {
+        if (payload.conflicts.length)
+          toast.add({
+            title: "Save conflict",
+            description: `Choose which saves to keep: ${payload.conflicts.join(", ")}`,
+            color: "warning",
+            icon: "i-heroicons-exclamation-triangle",
+          });
+        if (payload.errors.length)
+          toast.add({
+            title: "Background sync failed",
+            description: payload.errors.join("; "),
+            color: "error",
+            icon: "i-heroicons-exclamation-circle",
+          });
+      }),
+    );
+  } catch {
+    // not running inside Tauri
+  }
+});
+
+onUnmounted(() => {
+  activityEvents.forEach((e) => window.removeEventListener(e, onActivity));
+  clearInterval(idleTimer);
+  unlisteners.forEach((u) => u());
+});
+
 const navItems: NavigationMenuItem[][] = [
   [
     {
@@ -151,6 +231,7 @@ const navItems: NavigationMenuItem[][] = [
         <TitleBar />
         <UDashboardGroup
           :ui="{ base: 'fixed top-8 inset-x-0 bottom-0 flex overflow-hidden' }"
+          :inert="locked"
         >
           <UDashboardSidebar
             collapsible
@@ -227,6 +308,7 @@ const navItems: NavigationMenuItem[][] = [
 
           <RouterView />
         </UDashboardGroup>
+        <LockScreen v-if="locked" :biometric="lockStatus?.biometric ?? false" />
       </div>
     </UContextMenu>
   </UApp>

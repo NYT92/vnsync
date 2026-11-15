@@ -99,7 +99,11 @@ impl Remote {
         let resp = req.send().await.map_err(|e| e.to_string())?;
         match resp.status().as_u16() {
             200..=299 => Ok(resp),
-            401 => Err("Server rejected the token".to_string()),
+            401 => Err(
+                "Server rejected this device. It may be signed out; sign in again in Settings."
+                    .to_string(),
+            ),
+            403 => Err("Wrong server password".to_string()),
             412 => Err("Remote saves changed during sync. Sync again.".to_string()),
             code => Err(format!("Server returned HTTP {}", code)),
         }
@@ -344,6 +348,66 @@ pub fn build_remote(profile: &StorageProfile) -> Result<Remote, String> {
         });
     }
     build_operator(profile).map(Remote::Dal)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerDevice {
+    pub id: String,
+    pub name: String,
+    pub os: String,
+    pub created_at: String,
+    pub last_seen_at: String,
+    pub current: bool,
+}
+
+/// Trades the server password for a device token. The password itself is never stored.
+pub async fn server_sign_in(
+    profile: &StorageProfile,
+    password: &str,
+    device_id: &str,
+    device_name: &str,
+) -> Result<String, String> {
+    let mut login = profile.clone();
+    login.secret_key = password.to_string();
+    let remote = build_remote(&login)?;
+    let req = remote
+        .server_request(reqwest::Method::POST, "sessions")?
+        .json(&serde_json::json!({
+            "deviceId": device_id,
+            "deviceName": device_name,
+            "os": std::env::consts::OS,
+        }));
+    // The master password gets 200 here; a device token gets 403, a wrong password 401.
+    let resp = Remote::send(req).await.map_err(|e| {
+        if e.starts_with("Server rejected") {
+            "Wrong server password".to_string()
+        } else {
+            e
+        }
+    })?;
+    #[derive(Deserialize)]
+    struct Token {
+        token: String,
+    }
+    resp.json::<Token>()
+        .await
+        .map(|t| t.token)
+        .map_err(|e| e.to_string())
+}
+
+pub async fn server_list_devices(profile: &StorageProfile) -> Result<Vec<ServerDevice>, String> {
+    let remote = build_remote(profile)?;
+    let resp = Remote::send(remote.server_request(reqwest::Method::GET, "sessions")?).await?;
+    resp.json().await.map_err(|e| e.to_string())
+}
+
+pub async fn server_revoke_device(profile: &StorageProfile, device_id: &str) -> Result<(), String> {
+    let remote = build_remote(profile)?;
+    let path = format!("sessions/{}", device_id);
+    Remote::send(remote.server_request(reqwest::Method::DELETE, &path)?)
+        .await
+        .map(|_| ())
 }
 
 fn build_operator(profile: &StorageProfile) -> Result<Operator, String> {
@@ -1005,18 +1069,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_sync_against_vnsync_server() {
-        let profile = StorageProfile {
-            id: "server-test".to_string(),
-            name: "Test Server".to_string(),
-            provider_type: "vnsync_server".to_string(),
-            endpoint: std::env::var("VNSYNC_TEST_SERVER").unwrap(),
-            bucket: String::new(),
-            region: String::new(),
-            root_prefix: String::new(),
-            access_key: String::new(),
-            secret_key: std::env::var("VNSYNC_TEST_TOKEN").unwrap(),
-            is_active: true,
-        };
+        let profile = server_test_profile(std::env::var("VNSYNC_TEST_TOKEN").unwrap());
         test_storage_connection(&profile).await.unwrap();
         sync_roundtrip(profile.clone()).await;
 
@@ -1033,6 +1086,53 @@ mod tests {
             stale.unwrap_err(),
             "Remote saves changed during sync. Sync again."
         );
+    }
+
+    fn server_test_profile(secret_key: String) -> StorageProfile {
+        StorageProfile {
+            id: "server-test".to_string(),
+            name: "Test Server".to_string(),
+            provider_type: "vnsync_server".to_string(),
+            endpoint: std::env::var("VNSYNC_TEST_SERVER").unwrap(),
+            bucket: String::new(),
+            region: String::new(),
+            root_prefix: String::new(),
+            access_key: String::new(),
+            secret_key,
+            is_active: true,
+        }
+    }
+
+    /// Same setup as `test_sync_against_vnsync_server`.
+    #[tokio::test]
+    #[ignore]
+    async fn test_device_session_against_vnsync_server() {
+        let password = std::env::var("VNSYNC_TEST_TOKEN").unwrap();
+        let mut profile = server_test_profile(String::new());
+        assert_eq!(
+            server_sign_in(&profile, "wrong", "dev-test", "PC").await,
+            Err("Wrong server password".to_string())
+        );
+        profile.secret_key = server_sign_in(&profile, &password, "dev-test", "PC")
+            .await
+            .unwrap();
+        assert_ne!(profile.secret_key, password);
+        test_storage_connection(&profile).await.unwrap();
+        let devices = server_list_devices(&profile).await.unwrap();
+        assert!(devices.iter().any(|d| d.id == "dev-test" && d.current));
+
+        // A device token cannot sign in other devices.
+        let token = profile.secret_key.clone();
+        assert_eq!(
+            server_sign_in(&profile, &token, "dev-2", "PC").await,
+            Err("Wrong server password".to_string())
+        );
+
+        server_revoke_device(&profile, "dev-test").await.unwrap();
+        assert!(test_storage_connection(&profile)
+            .await
+            .unwrap_err()
+            .starts_with("Server rejected this device"));
     }
 
     async fn sync_roundtrip(profile: StorageProfile) {

@@ -1,8 +1,8 @@
 import "dotenv/config";
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { H3, HTTPError, serve } from "h3";
+import { H3, HTTPError, readBody, serve } from "h3";
 
 const SECRET = process.env.SECRET ?? "";
 if (!SECRET) throw new Error("SECRET is empty. Set it in server/.env");
@@ -15,8 +15,10 @@ const SECRET_HASH = sha256(SECRET);
 
 /** Maps a storage key to a path inside DATA_DIR, rejecting anything that could escape it. */
 function keyToPath(key: string): string {
+  // Keys starting with "_" are reserved for server state (e.g. _server/devices.json).
   const safe =
     /^[A-Za-z0-9._/-]+$/.test(key) &&
+    !key.startsWith("_") &&
     key.split("/").every((s) => s !== "" && s !== "." && s !== "..");
   const file = path.join(DATA_DIR, key);
   if (!safe || !file.startsWith(DATA_DIR + path.sep)) {
@@ -86,16 +88,88 @@ function writeHead(file: string, body: Buffer, headers: Headers) {
   );
 }
 
+/** A signed-in PC. Only the token's hash is stored. */
+interface Device {
+  id: string;
+  name: string;
+  os: string;
+  tokenHash: string;
+  createdAt: string;
+  lastSeenAt: string;
+}
+
+const DEVICES_FILE = path.join(DATA_DIR, "_server", "devices.json");
+
+function readDevices(): Device[] {
+  return JSON.parse(readIfExists(DEVICES_FILE)?.toString() ?? "[]");
+}
+
+function writeDevices(devices: Device[]) {
+  atomicWrite(DEVICES_FILE, JSON.stringify(devices, null, 2));
+}
+
 export const app = new H3();
 
+/**
+ * Accepts the master SECRET (used to sign in, and by pre-0.2 clients) or a device token
+ * issued by POST /api/sessions. Revoking a device deletes its token.
+ */
 app.use((event) => {
   const token = event.req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
-  if (!timingSafeEqual(sha256(token), SECRET_HASH)) {
-    throw new HTTPError({ status: 401, message: "Invalid token" });
+  if (timingSafeEqual(sha256(token), SECRET_HASH)) {
+    event.context.master = true;
+    return;
+  }
+  const hash = sha256(token).toString("hex");
+  const devices = readDevices();
+  const device = devices.find((d) => d.tokenHash === hash);
+  if (!device) throw new HTTPError({ status: 401, message: "Invalid token" });
+  event.context.deviceId = device.id;
+  // ponytail: last-seen is written at most once a minute; move to SQLite if many devices sync often.
+  if (Date.now() - Date.parse(device.lastSeenAt) > 60_000) {
+    device.lastSeenAt = new Date().toISOString();
+    writeDevices(devices);
   }
 });
 
 app.get("/api/ping", () => ({ ok: true }));
+
+/** Sign in: trade the master SECRET for a per-device token. Re-signing in replaces the old token. */
+app.post("/api/sessions", async (event) => {
+  if (!event.context.master) {
+    throw new HTTPError({ status: 403, message: "Sign in with the server password" });
+  }
+  const body = (await readBody<any>(event)) ?? {};
+  const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const id = str(body.deviceId, 64);
+  if (!/^[A-Za-z0-9-]+$/.test(id)) {
+    throw new HTTPError({ status: 400, message: "Invalid deviceId" });
+  }
+  const token = randomBytes(32).toString("base64url");
+  const now = new Date().toISOString();
+  const devices = readDevices().filter((d) => d.id !== id);
+  devices.push({
+    id,
+    name: str(body.deviceName, 100) || "Unknown device",
+    os: str(body.os, 32),
+    tokenHash: sha256(token).toString("hex"),
+    createdAt: now,
+    lastSeenAt: now,
+  });
+  writeDevices(devices);
+  return { token };
+});
+
+app.get("/api/sessions", (event) =>
+  readDevices().map(({ tokenHash, ...d }) => ({ ...d, current: d.id === event.context.deviceId })),
+);
+
+/** Sign out this device, or revoke another one. */
+app.delete("/api/sessions/:id", (event) => {
+  const id = event.context.params!.id;
+  writeDevices(readDevices().filter((d) => d.id !== id));
+  return { ok: true };
+});
 
 app.get("/api/blob/**:key", (event) => {
   const data = readIfExists(keyToPath(event.context.params!.key));
